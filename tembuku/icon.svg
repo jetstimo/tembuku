@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>Tembuku</title>
+  <!-- "Kawung Cahaya": the four-petal kawung motif of Javanese batik drawn in light. An existing feeder (diagonal beam)
+       passes through the tembuku (centre); one petal is the new branch, lit in gold, toward the FDT. -->
+  <defs>
+    <linearGradient id="nila" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1c2463"/><stop offset="1" stop-color="#090c2b"/>
+    </linearGradient>
+    <linearGradient id="sinar" x1="20" y1="236" x2="236" y2="20" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22d3ee" stop-opacity="0"/><stop offset="0.25" stop-color="#22d3ee"/>
+      <stop offset="0.75" stop-color="#2dd4bf"/><stop offset="1" stop-color="#2dd4bf" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="emas" x1="150" y1="100" x2="230" y2="156" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffe08a"/><stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+    <radialGradient id="pendar" cx="186" cy="128" r="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fbbf24" stop-opacity="0.55"/><stop offset="1" stop-color="#fbbf24" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="kotak"><rect x="8" y="8" width="240" height="240" rx="56"/></clipPath>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#nila)"/>
+  <g clip-path="url(#kotak)">
+    <circle cx="186" cy="128" r="64" fill="url(#pendar)"/>
+    <!-- existing feeder: a beam of light with a white core -->
+    <path d="M8 248 L248 8" stroke="url(#sinar)" stroke-width="16" filter="url(#glow)"/>
+    <path d="M8 248 L248 8" stroke="#ecfeff" stroke-opacity="0.85" stroke-width="3"/>
+  </g>
+  <!-- kawung petals (up, left, down): branches already served -->
+  <g fill="#2dd4bf" fill-opacity="0.10" stroke="#2dd4bf" stroke-width="7" filter="url(#glow)">
+    <ellipse cx="128" cy="70" rx="27" ry="44"/>
+    <ellipse cx="70" cy="128" rx="44" ry="27"/>
+    <ellipse cx="128" cy="186" rx="27" ry="44"/>
+  </g>
+  <!-- the new branch: gold petal toward the FDT -->
+  <ellipse cx="186" cy="128" rx="44" ry="27" fill="url(#emas)" filter="url(#glow)"/>
+  <!-- isen (seed) dots of the kawung -->
+  <g fill="#ecfeff" fill-opacity="0.9"><circle cx="128" cy="62" r="4.5"/><circle cx="62" cy="128" r="4.5"/>
+    <circle cx="128" cy="194" r="4.5"/></g>
+  <circle cx="194" cy="128" r="6" fill="#1c2463"/>
+  <!-- the tembuku: divider at the centre -->
+  <rect x="113" y="113" width="30" height="30" rx="6" transform="rotate(45 128 128)" fill="#ffffff"/>
+  <rect x="121" y="121" width="14" height="14" rx="3" transform="rotate(45 128 128)" fill="#f59e0b"/>
+</svg>
