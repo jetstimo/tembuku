@@ -146,7 +146,7 @@ _TUGAS = []      # keep references to running tasks
 
 
 def _lapisan(kunci):
-    return [l for l in QgsProject.instance().mapLayers().values() if l.customProperty(PROP) == kunci]
+    return [lyr for lyr in QgsProject.instance().mapLayers().values() if lyr.customProperty(PROP) == kunci]
 
 
 def cek_tanggal(plugin, diam=False):
