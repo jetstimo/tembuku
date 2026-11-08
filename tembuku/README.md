@@ -14,13 +14,16 @@ Tembuku™ and its logo are trademarks of Joseph Edward Timothy Siahaan. Officia
 
 ## Use it in three steps
 1. Click the **Tembuku** icon (or *Vector → Tembuku → Design Feeders...*).
-2. **Choose the folder** with your KMZ files. Tembuku recognises each file from its content and checks it:
+2. **Choose the folder** with your data. Tembuku looks inside every file and recognises what it is from its content
+   (object shapes, data columns, folder layout), not from its name or extension, and says why in the *Why* column.
+   Formats: KMZ/KML (even with the wrong extension), ZIP bundles, GeoJSON, CSV/TXT/Excel with coordinates, and through
+   QGIS also Shapefile, GeoPackage, GML, TAB, FlatGeobuf and GPX. Indonesian and English column names are understood.
 
    | File | Needed? | Used for |
    |---|---|---|
    | Cable inventory KMZ (existing network) | at least one of these two | feeders that may give free tubes, existing pole routes |
    | Feeder design compilation KMZ (`F1_T1`, ...) | ↑ | on-going feeders, tube use, F/T numbering, POP |
-   | Distribution / design-lite KMZ | yes (or click FDTs on the map) | target FDTs, splitters, cluster ID and area |
+   | KMZ with the FDT points to design (distribution or design KMZ) | yes (or click FDTs on the map) | target FDTs, splitters, cluster ID and area |
    | POP / OLT list KMZ | when the POP is not in the compilation | POP locations |
 3. Press **Run all FDTs**. You get styled layers in QGIS, a results panel and, in the `TEMBUKU_HASIL_<date>` folder:
    one `TEMBUKU_<FDT>_<DECISION>.kmz` per FDT and `TEMBUKU_SEMUA_*.kmz` in the compilation template (ready to paste),
@@ -61,7 +64,7 @@ Tembuku contains no company or brand names. To make the KMZ labels match your co
 `istilah.json` file in `Documents/Tembuku/` (see the Help page). It stays on your computer and is not part of the plugin.
 
 ## Security and data
-KMZ files are never extracted to disk; decompressed size and ratio are limited; KML with a DTD is rejected; text from
+KMZ files are never extracted to disk (ZIP bundles only into Tembuku's cache, with limits); decompressed size and ratio are limited; KML with a DTD is rejected; text from
 files is never rendered as HTML. The cable index stores only the geometry and the attributes the decision needs, in your
 QGIS profile folder. The only internet use is road data from OpenStreetMap (once per area, cached for 90 days), which can
 be switched off or replaced by your own road layer or your own Overpass server. Road data © OpenStreetMap contributors, ODbL 1.0.

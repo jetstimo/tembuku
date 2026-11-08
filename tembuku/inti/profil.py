@@ -9,23 +9,22 @@ BAWAAN = {
     "tube_per_fdt": (1, "KEBIJAKAN+DATA", "1 FDT = 1 tube (12 core). Splitter FDT terbesar di data 12x1x4 = 12 core; "
                      "semua feeder di data <= 8 FDT per kabel 96C (8 tube)"),
     "mode_kapasitas": ("tube", "KEBIJAKAN", "'tube' = tube utuh per FDT; 'core' = 1 core per splitter 1:4 (praktik sebagian operator)"),
-    "produk_feeder": ("FTTH", "DATA", "Kabel nasional yang boleh DIPETIK core-nya (dipisah koma). Data riil: Colo Cable 100 % "
+    "produk_feeder": ("FTTH", "DATA", "Jenis produk kabel inventaris yang boleh dipakai core-nya (dipisah koma). Data riil: kabel yang ditumpangi 100 % "
                       "berimpit kabel feeder FTTH compile, 0 % kabel produk lain (FTTT, sewa, fiberisasi); kabel lain = jalur tiang"),
-    "core_feeder_min": (48, "KEBIJAKAN", "Kabel nasional < 48 core dianggap distribusi, bukan feeder"),
+    "core_feeder_min": (48, "KEBIJAKAN", "Kabel inventaris < 48 core dianggap kabel distribusi, bukan feeder"),
     "core_per_tube": (12, "STANDAR", "ANSI/TIA-598-D (2014) + Addendum 1 (2018): 12 warna serat per tube; notasi 24/2, "
                       "48/4, 96/8"),
     "cadangan_tube": (0, "KEBIJAKAN", "Tube yang disisakan di feeder setelah alokasi"),
-    "pakai_spare_kosong": (True, "KEBIJAKAN", "Kabel nasional tanpa NUM_SPARE_ tetap ditampilkan sebagai kandidat "
-                           "BELUM TERVERIFIKASI (peringkat diturunkan), tidak pernah dianggap lolos"),
-    "cos_arah_min": (0.5, "DATA", "Searah: cos sudut arah kabel vs POP->FDT >= 0,5 (<= 60 derajat). Data riil: 7/10 >= 0,92"),
-    "jarak_dekat_m": (300, "DATA", "FDT <= 300 m dari kabel: arah tidak menentukan (data riil: cos -0,78 pada 144 m)"),
+    "pakai_spare_kosong": (True, "KEBIJAKAN", "Kabel inventaris tanpa data core cadangan (spare) tetap ditampilkan sebagai kandidat yang sisa tube-nya belum pasti (peringkat diturunkan), tidak pernah langsung dipakai"),
+    "cos_arah_min": (0.5, "DATA", "Feeder dianggap searah bila melenceng paling banyak 60° dari arah POP ke FDT (nilai 0,5 = 60°). Desain nyata: 7 dari 10 melenceng kurang dari 23°"),
+    "jarak_dekat_m": (300, "DATA", "Bila FDT sudah sangat dekat dengan kabel (<= 300 m), arah kabel tidak menentukan. Desain nyata: kabel yang melenceng 141° pun dipakai pada jarak 144 m"),
     "detour_maks": (1.5, "DATA", "Panjang kabel baru / jarak lurus tap-FDT; data riil 1,01-1,30"),
-    "cabang_maks_m": (2500, "KEBIJAKAN", "Kabel baru tap->FDT terpanjang yang masih masuk akal untuk colo"),
-    "rasio_jalur_maks": (1.24, "DATA", "Searah ke FDT: panjang serat lewat colo (POP->tap->FDT) <= 1,24 x feeder baru "
-                         "langsung dari POP. Dikalibrasi pada 17 traksi riil Bitung & Tomohon (colo <= 1,23; feeder baru "
+    "cabang_maks_m": (2500, "KEBIJAKAN", "Kabel baru titik sambung->FDT terpanjang yang masih masuk akal saat menumpang feeder yang ada"),
+    "rasio_jalur_maks": (1.24, "DATA", "Searah ke FDT: panjang serat bila menumpang feeder yang ada (POP->titik sambung->FDT) <= 1,24 x feeder baru "
+                         "langsung dari POP. Dikalibrasi pada 17 traksi riil Bitung & Tomohon (menumpang <= 1,23; feeder baru "
                          ">= 1,25); keputusan dalam +-0,05 dari ambang ditandai BATAS untuk ditinjau"),
-    "zona_batas": (0.05, "KEBIJAKAN", "Lebar zona tinjau di sekitar ambang rasio jalur"),
-    "faktor_tiang_eksisting": (0.8, "KEBIJAKAN", "Biaya relatif per meter menumpang tiang eksisting (colo pole)"),
+    "zona_batas": (0.05, "KEBIJAKAN", "Hasil yang selisihnya kurang dari 0,05 dari batas panjang jalur ditandai 'perlu ditinjau'"),
+    "faktor_tiang_eksisting": (0.8, "KEBIJAKAN", "Biaya relatif per meter menumpang tiang yang sudah ada"),
     "faktor_akses": (1.2, "KEBIJAKAN", "Sambungan lurus FDT/POP ke jaringan terdekat (<= 150 m)"),
     "faktor_bebas": (1.35, "KEBIJAKAN", "Garis bantu lurus bila tidak ada data jalan (WAJIB digambar ulang)"),
     "faktor_garis_bantu": (1.35, "DATA", "Panjang nyata jalur yang masih berupa garis bantu lurus = 1,35 x lurus "
@@ -36,11 +35,11 @@ BAWAAN = {
     "sambung_jalan_m": (25, "KEBIJAKAN", "Kabel ke jalan: tiang di bahu jalan (<= 25 m dari as jalan)"),
     "rapat_m": (25, "KEBIJAKAN", "Kerapatan titik calon tap di sepanjang kabel"),
     "faktor_jalur_feeder": (1.5, "DATA", "Bila jalur kabel POP->tap tidak tersambung di data: panjang = 1,5 x lurus "
-                            "(data riil colo/lurus 1,27-1,65)"),
-    "core_cabang": (48, "DATA", "Kabel cabang tap->FDT: 48C (pola semua traksi colo di data riil)"),
+                            "(data riil: jalur sebenarnya 1,27-1,65 x garis lurus)"),
+    "core_cabang": (48, "DATA", "Kabel cabang titik sambung->FDT: 48C (pola semua desain menumpang di data riil)"),
     "core_feeder_baru": (96, "DATA", "Feeder baru: OTB 144 + 144C ke Closure 144 (slack) lalu 96C (pola T1 di data riil)"),
     "stub_144_m": (75, "DATA", "Panjang 144C dari OTB ke Closure 144: data riil 40-93 m"),
-    "closure_tap": ("96", "DATA", "Closure baru di titik tap: 'New Closure 96' pada 7/10 traksi colo data riil"),
+    "closure_tap": ("96", "DATA", "Closure baru di titik sambung: 'New Closure 96' pada 7 dari 10 desain menumpang di data riil"),
     "slack_m": (10, "STANDAR", "ITU-T L.163 (11/2018): sisakan panjang kabel >= 10 m per ujung untuk penyambungan "
                 "(L.163 juga menyarankan ~10 % lebih untuk kabel permukaan; panjang rute Tembuku sudah dikalibrasi)"),
     "pop_maks_m": (20000, "STANDAR", "POP dianggap melayani FDT hanya dalam 20 km: jangkauan fisik GPON 10 atau 20 km, "
@@ -117,6 +116,30 @@ def dasar():
 
 
 # Plain-English name and explanation of every parameter, for the user interface (the report keeps the Indonesian basis).
+# Label parameter dalam bahasa Indonesia untuk laporan (pengganti nama kunci internal)
+LABEL_ID = {
+    "radius_cari_m": "Radius pencarian feeder (m)", "tube_per_fdt": "Tube per FDT",
+    "mode_kapasitas": "Cara hitung kapasitas", "produk_feeder": "Jenis produk kabel yang boleh dipakai",
+    "core_feeder_min": "Ukuran feeder terkecil (core)", "core_per_tube": "Core per tube",
+    "cadangan_tube": "Tube cadangan yang disisakan", "pakai_spare_kosong": "Tampilkan kabel tanpa data cadangan",
+    "cos_arah_min": "Arah feeder minimum (0,5 = boleh melenceng 60°)", "jarak_dekat_m": "Jarak 'sangat dekat' ke kabel (m)",
+    "detour_maks": "Batas memutar kabel baru (x jarak lurus)", "cabang_maks_m": "Kabel baru terpanjang (m)",
+    "rasio_jalur_maks": "Batas panjang jalur lewat feeder (x feeder baru)", "zona_batas": "Lebar zona 'perlu ditinjau'",
+    "faktor_tiang_eksisting": "Bobot biaya: menumpang tiang yang ada", "faktor_akses": "Bobot biaya: sambungan ke jaringan",
+    "faktor_bebas": "Bobot biaya: garis bantu", "faktor_garis_bantu": "Perkiraan panjang nyata garis bantu (x)",
+    "akses_maks_m": "Jarak terjauh ke jalan atau kabel (m)", "sambung_kabel_m": "Dua kabel dianggap satu tiang dalam (m)",
+    "sambung_jalan_m": "Jarak tiang ke jalan (m)", "rapat_m": "Jarak antar calon titik sambung (m)",
+    "faktor_jalur_feeder": "Perkiraan panjang feeder bila jalurnya tidak tersambung di data (x)",
+    "core_cabang": "Ukuran kabel cabang ke FDT (core)", "core_feeder_baru": "Ukuran feeder baru (core)",
+    "stub_144_m": "Panjang kabel 144C dari OTB (m)", "closure_tap": "Ukuran closure di titik sambung (core)",
+    "slack_m": "Slack per ujung kabel (m)", "pop_maks_m": "Jarak POP terjauh (m)",
+    "fiber_db_km": "Redaman kabel (dB/km)", "splitter_fdt_db": "Redaman splitter 1:4 (dB)",
+    "splitter_fat_db": "Redaman splitter 1:8 (dB)", "konektor_n": "Jumlah konektor", "konektor_db": "Redaman per konektor (dB)",
+    "splice_db": "Redaman per sambungan fusi (dB)", "margin_db": "Margin cadangan (dB)",
+    "kelas_olt_db": "Batas redaman perangkat GPON (dB)", "distribusi_km": "Panjang distribusi ke pelanggan (km)",
+}
+JENIS_ID = {"STANDAR": "Standar", "DATA": "Dari desain nyata", "KEBIJAKAN": "Kebijakan", "KEBIJAKAN+DATA": "Kebijakan dan desain nyata"}
+
 PENJELASAN_EN = {
     "radius_cari_m": ("Search radius (m)", "How far around each FDT to look for an existing feeder. The longest branch "
                       "in the real designs is 1,466 m."),
@@ -130,15 +153,15 @@ PENJELASAN_EN = {
     "cadangan_tube": ("Reserved tubes", "Tubes to keep free in a feeder after this FDT is added."),
     "pakai_spare_kosong": ("Show cables with unknown spare", "Cables without a spare count are shown as 'not verified' "
                            "candidates; they are never accepted automatically."),
-    "cos_arah_min": ("Minimum direction match (cos)", "How well the feeder must point toward the FDT as seen from the "
-                     "POP: 1 = same direction, 0.5 = within 60 degrees."),
+    "cos_arah_min": ("Direction limit (cosine of the angle)", "How closely the feeder must point toward the FDT, seen "
+                     "from the POP: 1 = exactly toward it, 0.5 = up to 60 degrees off (default)."),
     "jarak_dekat_m": ("'Very close' distance (m)", "If the FDT is this close to a cable, direction does not matter."),
     "detour_maks": ("Maximum detour", "New cable length divided by the straight distance from tap to FDT."),
     "cabang_maks_m": ("Longest new branch (m)", "Longest new cable from the tap to the FDT that still makes sense."),
-    "rasio_jalur_maks": ("Route ratio limit", "Reuse a feeder only if (POP-to-tap + new cable) is at most this many times "
+    "rasio_jalur_maks": ("Longest route through a feeder (x a new feeder)", "Reuse a feeder only if (POP-to-tap + new cable) is at most this many times "
                          "a new feeder straight from the POP. Calibrated on 17 real designs."),
-    "zona_batas": ("Borderline band", "Results within this distance of the route ratio limit are marked 'borderline' "
-                   "for a designer to review."),
+    "zona_batas": ("'Please review' band", "Results this close to the route limit above are marked 'please review' so "
+                   "a designer checks both options."),
     "faktor_tiang_eksisting": ("Cost factor: existing poles", "Relative cost per metre of running along existing "
                                "poles (lower = preferred)."),
     "faktor_akses": ("Cost factor: access link", "Relative cost of the short straight link from an FDT or POP to the "

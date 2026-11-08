@@ -9,13 +9,12 @@ from qgis.gui import QgsMapToolEmitPoint
 from qgis.PyQt import QtGui, QtWidgets
 
 from . import __version__, _log, qtc, tugas
-from .inti import profil
+from .inti import mesin, profil
+from .inti.teks import en
 
 MENU = "&Tembuku"
 # plain-English decision names for the user interface (reports keep their Indonesian wording)
-KEPUTUSAN_EN = {"COLO": "Reuse existing feeder", "COLO_CEK": "Reuse feeder - check free tubes",
-                "COLO_MANUAL": "Reuse feeder (designer's choice)", "FEEDER_BARU": "New feeder from POP",
-                "PERLU_MANUAL": "Needs manual design"}
+KEPUTUSAN_EN = {k: en(v) for k, v in mesin.NAMA_KEPUTUSAN.items()}
 HERE = os.path.dirname(__file__)
 
 

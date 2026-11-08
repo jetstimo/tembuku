@@ -14,6 +14,7 @@ from qgis.PyQt import QtGui, QtWidgets
 from . import layanan, qtc
 from .inti import profil, sumber
 from .inti import validasi as V
+from .inti.teks import T, en
 
 PERAN = ["NASIONAL", "COMPILE", "TARGET", "POP", "LAIN"]
 LABEL = {"NASIONAL": "Cable inventory (existing network)", "COMPILE": "Feeder design compilation (on-going)",
@@ -32,9 +33,9 @@ class DialogTembuku(QtWidgets.QDialog):
         self.sesi = None
         lay = QtWidgets.QVBoxLayout(self)
         judul = QtWidgets.QLabel("<b style='font-size:14px'>1. Your data</b> &nbsp; Choose the folder that holds your KMZ "
-                                 "files: the cable inventory and/or the feeder design compilation, the target FDTs "
-                                 "(distribution or design-lite KMZ) and the POP list. Tembuku works out what each file "
-                                 "is; you can change it in the list below.")
+                                 "files: the cable inventory and/or the feeder design compilation, a KMZ with the FDT "
+                                 "points to design, and the POP list. Tembuku works out what each file is; you can "
+                                 "change it in the list below.")
         judul.setWordWrap(True)
         lay.addWidget(judul)
         baris = QtWidgets.QHBoxLayout()
@@ -43,25 +44,29 @@ class DialogTembuku(QtWidgets.QDialog):
         self.w_folder.setFilePath(self.st.value("tembuku/folder", ""))
         self.w_folder.fileChanged.connect(lambda _p: self.periksa())
         b_tambah = QtWidgets.QPushButton("Add files...")
-        b_tambah.setToolTip("Add KMZ/KML files that are in other folders")
+        b_tambah.setToolTip("Add map data files that are in other folders (KMZ, KML, ZIP, GeoJSON, CSV, Excel, Shapefile, "
+                            "GeoPackage)")
         b_tambah.clicked.connect(self._tambah)
         baris.addWidget(self.w_folder, 1)
         baris.addWidget(b_tambah)
         lay.addLayout(baris)
         self.tambahan = [p for p in json.loads(self.st.value("tembuku/tambahan", "[]") or "[]") if os.path.exists(p)]
-        self.tabel = QtWidgets.QTableWidget(0, 3)
-        self.tabel.setHorizontalHeaderLabels(["File", "Read as", "Size"])
-        self.tabel.setToolTip("If a file was recognised wrongly, choose the right role in the 'Read as' column")
+        self.tabel = QtWidgets.QTableWidget(0, 4)
+        self.tabel.setHorizontalHeaderLabels(["File", "Read as", "Why", "Size"])
+        self.tabel.setToolTip("Each file's type is recognised from what is inside it (object shapes, data columns, "
+                              "folder layout), not from its name. If one was recognised wrongly, choose the right "
+                              "role in the 'Read as' column")
         self.tabel.horizontalHeader().setSectionResizeMode(0, qtc.STRETCH)
         self.tabel.setEditTriggers(qtc.NO_EDIT)
         self.tabel.horizontalHeader().setSectionResizeMode(1, qtc.TO_CONTENTS)
-        self.tabel.horizontalHeader().setSectionResizeMode(2, qtc.TO_CONTENTS)
+        self.tabel.horizontalHeader().setSectionResizeMode(2, qtc.STRETCH)
+        self.tabel.horizontalHeader().setSectionResizeMode(3, qtc.TO_CONTENTS)
         lay.addWidget(self.tabel, 2)
         lay.addWidget(QtWidgets.QLabel("<b style='font-size:14px'>2. Input check</b> &nbsp; "
                                        "<span style='color:#0e7c7b'>auto-corrected</span> &middot; "
                                        "<span style='color:#b45309'>please check</span> &middot; "
                                        "<span style='color:#b91c1c'>cannot run until fixed</span> &nbsp; "
-                                       "<i>(details are written in Indonesian, as in the report)</i>"))
+                                       ""))
         self.temuan = QtWidgets.QTextBrowser()
         lay.addWidget(self.temuan, 2)
 
@@ -210,8 +215,10 @@ class DialogTembuku(QtWidgets.QDialog):
 
     # ------------------------------------------------------------------ berkas
     def _tambah(self):
-        fs, _f = QtWidgets.QFileDialog.getOpenFileNames(self, "Add KMZ/KML files", self.w_folder.filePath(),
-                                                        "KMZ/KML (*.kmz *.kml)")
+        fs, _f = QtWidgets.QFileDialog.getOpenFileNames(
+            self, "Add map data files", self.w_folder.filePath(),
+            "Map data (*.kmz *.kml *.zip *.geojson *.json *.csv *.txt *.xlsx *.shp *.gpkg *.gml *.tab *.fgb *.gpx);;"
+            "All files (*)")
         if fs:
             self.tambahan = sorted(set(self.tambahan + fs))
             self.periksa()
@@ -233,22 +240,32 @@ class DialogTembuku(QtWidgets.QDialog):
             self.sesi = layanan.Sesi(paths, self.plugin.cache(), pakai_osm=False)
             t = self.sesi.pra_cek(target_manual=True)
             if not self.sesi.peran.get("TARGET"):
-                t.tambah(V.INFO, "Kelengkapan", "tidak ada titik FDT target di berkas: tekan 'Prepare for map clicks' "
-                         "lalu klik lokasi FDT di peta", "", "atau tambahkan KMZ Distribusi / Design Lite")
+                t.tambah(V.INFO, "Kelengkapan", T("tidak ada titik FDT yang akan dirancang di berkas ini: tekan "
+                                                  "'Prepare for map clicks' lalu klik lokasi FDT di peta",
+                                                  "these files have no FDT points to design: press 'Prepare for map "
+                                                  "clicks', then click where the FDT is on the map"), "",
+                         T("atau tambahkan KMZ berisi titik FDT (distribusi atau desain)",
+                           "or add a KMZ with the FDT points (distribution or design KMZ)"))
         finally:
             QtWidgets.QApplication.restoreOverrideCursor()
         self.tabel.setRowCount(0)
         for r_, p in [(r, p) for r in PERAN for p in self.sesi.peran.get(r, [])]:
             r = self.tabel.rowCount()
             self.tabel.insertRow(r)
-            self.tabel.setItem(r, 0, QtWidgets.QTableWidgetItem(os.path.basename(p)))
+            alasan = (getattr(self.sesi, "bukti", None) or {}).get(p) or ""
+            it = QtWidgets.QTableWidgetItem(os.path.basename(p))
+            it.setToolTip(p)
+            self.tabel.setItem(r, 0, it)
+            it = QtWidgets.QTableWidgetItem(en(alasan) if alasan else "")
+            it.setToolTip(en(alasan) if alasan else "")
+            self.tabel.setItem(r, 2, it)
             cb = QtWidgets.QComboBox()
             for x in PERAN:
                 cb.addItem(LABEL[x], x)
             cb.setCurrentIndex(PERAN.index(r_))
             cb.currentIndexChanged.connect(lambda _i, p=p, cb=cb: self._ganti_peran(p, cb.currentData()))
             self.tabel.setCellWidget(r, 1, cb)
-            self.tabel.setItem(r, 2, QtWidgets.QTableWidgetItem("%.1f MB" % (os.path.getsize(p) / 1048576.0)))
+            self.tabel.setItem(r, 3, QtWidgets.QTableWidgetItem("%.1f MB" % (os.path.getsize(p) / 1048576.0)))
         self._tulis_temuan()
 
     def _ganti_peran(self, path, baru):
@@ -260,7 +277,8 @@ class DialogTembuku(QtWidgets.QDialog):
         for x in self.sesi.temuan.daftar:
             if x["kategori"] != "Kelengkapan" or x["berkas"]:
                 t.daftar.append(x)
-        t.tambah(V.INFO, "Kelengkapan", "peran diubah pengguna menjadi %s" % LABEL[baru], os.path.basename(path))
+        t.tambah(V.INFO, "Kelengkapan", T("jenis berkas diubah pengguna menjadi %s", "file type changed by you to %s")
+                 % LABEL[baru], os.path.basename(path))
         V.cek_peran(self.sesi.peran, t, True)
         self.sesi.temuan = t
         self._tulis_temuan()
@@ -272,8 +290,8 @@ class DialogTembuku(QtWidgets.QDialog):
             hit[V.FATAL], hit[V.PERBAIKI], hit[V.PERINGATAN], hit[V.INFO])]
         for x in sorted(t.daftar, key=lambda x: [V.FATAL, V.PERINGATAN, V.PERBAIKI, V.INFO].index(x["tingkat"])):
             baris.append("<div style='color:%s'>&#9679; <b>%s</b> %s%s%s</div>" % (
-                WARNA[x["tingkat"]], TINGKAT_EN[x["tingkat"]], _e(x["berkas"] + ": ") if x["berkas"] else "", _e(x["pesan"]),
-                (" <i>&rarr; %s</i>" % _e(x["saran"])) if x["saran"] else ""))
+                WARNA[x["tingkat"]], TINGKAT_EN[x["tingkat"]], _e(x["berkas"] + ": ") if x["berkas"] else "",
+                _e(en(x["pesan"])), (" <i>&rarr; %s</i>" % _e(en(x["saran"]))) if x["saran"] else ""))
         if len(baris) == 1:
             baris.append("<div style='color:#0e7c7b'>All files were read correctly.</div>")
         if t.fatal():

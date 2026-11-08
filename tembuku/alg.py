@@ -7,6 +7,10 @@ from qgis.core import (QgsProcessingAlgorithm, QgsProcessingException, QgsProces
                        QgsProcessingParameterFile, QgsProcessingParameterFolderDestination)
 
 from . import layanan, tugas
+from .inti import mesin
+from .inti.teks import en
+
+TINGKAT_EN = {"FATAL": "CANNOT RUN", "DIKOREKSI": "AUTO-CORRECTED", "PERINGATAN": "CHECK", "INFO": "NOTE"}
 
 
 class TembukuFolder(QgsProcessingAlgorithm):
@@ -19,8 +23,9 @@ class TembukuFolder(QgsProcessingAlgorithm):
         return "Design feeders from a data folder"
 
     def shortHelpString(self):
-        return ("Reads every KMZ/KML file in the folder (cable inventory, feeder design compilation, distribution or "
-                "design-lite KMZ with the target FDTs, POP list) and checks it first: small typing mistakes are "
+        return ("Reads every map data file in the folder (KMZ, KML, ZIP bundles, GeoJSON, CSV/Excel with coordinates, "
+                "Shapefile, GeoPackage) and recognises from its content what it is (cable inventory, feeder design "
+                "compilation, FDT points to design, POP list), not from its name. It checks every file first: small typing mistakes are "
                 "corrected and listed, while a missing or damaged required file stops the run. For each FDT it then "
                 "looks for an existing feeder with free tubes that runs toward the FDT and draws the cable route from "
                 "the tap point to the FDT, or proposes a new feeder from the POP.\n\nOutputs: one KMZ per FDT in the "
@@ -59,11 +64,11 @@ class TembukuFolder(QgsProcessingAlgorithm):
         t = s.pra_cek(target_manual=uji)
         for x in t.daftar:
             (feedback.reportError if x["tingkat"] == "FATAL" else feedback.pushInfo)(
-                "[%s] %s%s%s" % (x["tingkat"], x["berkas"] + ": " if x["berkas"] else "", x["pesan"],
-                                 " -> " + x["saran"] if x["saran"] else ""))
+                "[%s] %s%s%s" % (TINGKAT_EN.get(x["tingkat"], x["tingkat"]), x["berkas"] + ": " if x["berkas"] else "",
+                                 en(x["pesan"]), " -> " + en(x["saran"]) if x["saran"] else ""))
         if t.fatal():
-            raise QgsProcessingException("The input is not complete or not correct; see the FATAL messages above. "
-                                         "Nothing was run.")
+            raise QgsProcessingException("The input is not complete or not correct; see the CANNOT RUN messages "
+                                         "above. Nothing was run.")
         try:
             s.muat()
             if uji:
@@ -74,7 +79,11 @@ class TembukuFolder(QgsProcessingAlgorithm):
             raise QgsProcessingException("Cancelled.")
         if s.nilai_uji:
             from . import uji_akurasi
-            feedback.pushInfo("ACCURACY TEST: %s" % uji_akurasi.ringkasan(s.nilai_uji))
+            r = uji_akurasi.ringkasan(s.nilai_uji)
+            feedback.pushInfo("ACCURACY TEST: same decision %s/%s, same F/T folder %s/%s, median tap-point offset %s m, "
+                              "median route match %s%%" % (r.get("keputusan_cocok"), r.get("n"), r.get("folder_cocok"),
+                                                         r.get("n"), r.get("tap_median_m"), r.get("jalur_median_pct")))
         for h in hasil:
-            feedback.pushInfo("%s: %s - %s" % (h["fdt"]["kode"], h["keputusan"], (h["alasan"] or [""])[0]))
+            feedback.pushInfo("%s: %s - %s" % (h["fdt"]["kode"], en(mesin.nama_keputusan(h["keputusan"])),
+                                              en((h["alasan"] or [""])[0])))
         return {self.KELUAR: keluar, "LAPORAN": out["html"], "KMZ_GABUNGAN": out["semua"] or (out["kmz"] or [""])[0]}

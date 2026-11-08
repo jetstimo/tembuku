@@ -56,32 +56,53 @@ an instant recommendation for an FDT at that spot.</div>
 <table><tr><th>File</th><th>Needed?</th><th>Used for</th></tr>
 <tr><td>Cable inventory KMZ (existing network, with spare-fibre counts)</td><td rowspan="2">At least one of these two</td><td>Existing feeders that may give free tubes, and existing pole routes</td></tr>
 <tr><td>Feeder design compilation KMZ (on-going feeders, folders <code>F1_T1</code>, ...)</td><td>On-going feeders, numbering of the new folder, and the accuracy test</td></tr>
-<tr><td>Target FDT KMZ (distribution or design-lite)</td><td>Yes, unless you click FDTs on the map</td><td>The FDTs to design</td></tr>
+<tr><td>KMZ with the FDT points to design (distribution or design KMZ)</td><td>Yes, unless you click FDTs on the map</td><td>The FDTs to design</td></tr>
 <tr><td>POP / OLT list KMZ</td><td>Recommended</td><td>Where each feeder starts. Without it, the POP is taken from the compilation if possible</td></tr>
 </table>
-<p>File names do not matter much: Tembuku recognises files by their content. Very large inventory files are fine; the first
-run builds a small index of your work area (a few seconds), later runs reuse it.</p>
+<p><b>File names and formats do not matter.</b> Tembuku looks inside every file and recognises what it is from the content:
+lines with fibre counts and spare-fibre data are a cable inventory; folders that hold both FDT points and cables (with
+<code>F1_T1</code> names or any other names) are a design compilation; a list of FDT/ODC points is what you want designed;
+POP/OLT/STO points are POP locations. The <i>Why</i> column in the window and the section "Berkas yang dibaca dan
+alasannya" in the report say what was found in each file. If a file was recognised wrongly, change it in the
+<i>Read as</i> column.</p>
+<p>Formats read: KMZ and KML (also when the extension is wrong), ZIP files holding several of these, GeoJSON, CSV or TXT with
+coordinate columns (lat/lon in any common spelling, one "lat, lon" column, or WKT; decimal comma is fine), Excel
+(.xlsx), and through QGIS also Shapefile, GeoPackage, GML, MapInfo TAB, FlatGeobuf and GPX. Column names in
+Indonesian or English are understood (e.g. <i>kode ODC</i>, <i>core cadangan</i>, <i>spare</i>), and attributes kept
+only in the description table of a KMZ are read too. Presentations, documents and pictures in the folder are skipped.
+Very large inventory files are fine; the first run builds a small index of your work area (a few seconds), later runs
+reuse it.</p>
 
 <h2 id="results">Reading the results</h2>
 <p>Every FDT gets one of these decisions. The report and the KMZ use the Indonesian names shown in brackets.</p>
 <table><tr><th>Decision</th><th>What it means</th><th>What you do</th></tr>
-<tr><td><span class="tag COLO">Reuse existing feeder</span><br><small>(Pakai feeder yang ada)</small></td><td>An existing feeder near the FDT has free tubes, runs toward the FDT and passes every check. Only a short new cable from the tap point is needed.</td><td>Check the route, then use the KMZ.</td></tr>
-<tr><td><span class="tag COLO_CEK">Reuse feeder - check free tubes</span><br><small>(cek tube kosong)</small></td><td>Direction and length are good, but the data does not prove that the feeder still has a free tube.</td><td>Confirm the free tube with the network owner before using it.</td></tr>
-<tr><td><span class="tag COLO_MANUAL">Reuse feeder (designer's choice)</span></td><td>You chose another candidate in the panel although Tembuku had a note on it.</td><td>The note is kept in the report for your records.</td></tr>
-<tr><td><span class="tag FEEDER_BARU">New feeder from POP</span><br><small>(Feeder baru dari POP)</small></td><td>No existing feeder is suitable (full, wrong direction, too long a detour). A new feeder from the POP is drawn.</td><td>Check the route; redraw any straight helper line.</td></tr>
-<tr><td><span class="tag PERLU_MANUAL">Needs manual design</span><br><small>(Perlu desain manual)</small></td><td>Something essential is missing, for example no POP within 20 km.</td><td>Add the missing data, or design this FDT yourself.</td></tr>
+<tr><td><span class="tag COLO">Use an existing feeder</span><br><small>(Pakai feeder yang ada)</small></td><td>An existing feeder near the FDT has free tubes, runs toward the FDT and passes every check. Only a short new cable from the tap point is needed.</td><td>Check the route, then use the KMZ.</td></tr>
+<tr><td><span class="tag COLO_CEK">Use an existing feeder - check free tubes</span><br><small>(Pakai feeder yang ada - cek sisa tube)</small></td><td>Direction and length are good, but the data does not prove that the feeder still has a free tube.</td><td>Confirm the free tube with the network owner before using it.</td></tr>
+<tr><td><span class="tag COLO_MANUAL">Designer's choice</span><br><small>(Pilihan desainer)</small></td><td>You chose another candidate in the panel although Tembuku had a note on it.</td><td>The note is kept in the report for your records.</td></tr>
+<tr><td><span class="tag FEEDER_BARU">New feeder from the POP</span><br><small>(Feeder baru dari POP)</small></td><td>No existing feeder is suitable (full, wrong direction, too long a detour). A new feeder from the POP is drawn.</td><td>Check the route; redraw any straight helper line.</td></tr>
+<tr><td><span class="tag PERLU_MANUAL">Needs manual design</span><br><small>(Perlu dirancang manual)</small></td><td>Something essential is missing, for example no POP within 20 km, or Tembuku could not analyse this FDT. It is never left out of the list.</td><td>Add the missing data, or design this FDT yourself.</td></tr>
 </table>
 <h3>Marks you may see</h3>
 <ul>
-<li><b>Borderline</b> (<i>zona batas</i>): reusing a feeder and building a new one are almost equally good. Look at both.</li>
+<li><b>Please review</b> (<i>perlu ditinjau</i>): using an existing feeder and building a new one are almost equally good. Look at both before deciding.</li>
 <li><b>Straight helper line</b> (<i>garis bantu</i>, red dashes): there was no road or cable data on that stretch. Redraw it
 along the poles or the road before construction.</li>
 <li><b>Accuracy test</b>: when you run <i>Accuracy test</i>, each FDT already designed in the compilation is hidden and designed
 again, and the report compares Tembuku with the designer (same decision, same folder, tap point distance, route match).</li>
 </ul>
+<h3>The candidate table</h3>
+<p>For every FDT, Tembuku lists the existing feeders nearby and what it found for each one:</p>
+<ul>
+<li><b>Free tubes</b>: whether the feeder still has a whole tube (12 fibres) free for this FDT.</li>
+<li><b>New cable to FDT</b>: the new cable from the tap point on that feeder to the FDT, and how much longer it is than a straight line.</li>
+<li><b>Direction</b>: the angle between the feeder and the way to the FDT, seen from the POP. 0&deg; points straight at the FDT; more than 60&deg; (the default limit) means the feeder runs away from it.</li>
+<li><b>Route vs new feeder</b>: the route through this feeder (POP to tap point plus the new cable) compared with a new feeder straight from the POP. 1.00&times; is the same length; above 1.24&times; (the default limit) the route is a long way round.</li>
+<li><b>Signal loss</b>: the total loss of light from the POP to the customer and how much is left before the GPON class B+ limit of 28 dB.</li>
+<li><b>Result</b>: <i>Meets every condition</i>, <i>Usable, but ...</i> (something to check on site), or <i>Rejected: ...</i> with the reason in plain words.</li>
+</ul>
 <h3>On the map</h3>
 <p>Tembuku adds a group of layers: <i>Proposed cable route</i> (coloured by type: existing poles, new poles, helper line),
-<i>Existing feeder used (POP to tap)</i>, <i>Candidate feeders</i>, <i>FDT, POP and tap points</i>, and, in the accuracy test,
+<i>Existing feeder used (POP to tap point)</i>, <i>Candidate feeders</i>, <i>FDT, POP and tap points</i>, and, in the accuracy test,
 <i>Designer's own design</i>. In the panel, double-click another candidate to use it instead.</p>
 
 <h2 id="map">Click on the map</h2>
@@ -104,8 +125,8 @@ files with similar names if you mistyped a path.</li></ul>
 are used only as existing pole routes.</li>
 <li><b>Free tubes:</b> from the spare-fibre count (spare &divide; 12 per tube) or, for on-going feeders, tubes minus the FDTs they
 already serve. One FDT uses one tube.</li>
-<li><b>Direction:</b> the feeder must run toward the FDT as seen from the POP, and the fibre path through the tap must not be more
-than 1.24 times a new feeder from the POP. This limit was calibrated on 17 approved real designs.</li>
+<li><b>Direction:</b> the feeder must run toward the FDT as seen from the POP (at most 60&deg; off), and the route through
+the tap point must not be more than 1.24 times a new feeder from the POP. This limit was calibrated on 17 approved real designs.</li>
 <li><b>Route:</b> the cheapest path from the tap to the FDT along existing poles, roads and short access links (a shortest-path
 search, the standard engineering rule in FTTH planning research). Existing poles are preferred.</li>
 <li><b>Optical budget:</b> fibre loss, splitters, connectors, splices and a 3 dB margin must stay within GPON class B+ (28 dB).
@@ -125,10 +146,13 @@ Tembuku uses the standards' maximum values, so the check is on the safe side.</l
 <tr><td><b>Tap point</b></td><td>The spot on an existing feeder where a closure is opened to take one tube to the new FDT.</td></tr>
 <tr><td><b>Colo / reuse</b></td><td>Using an existing feeder or existing poles instead of building new ones.</td></tr>
 <tr><td><b>New infra</b></td><td>Stretches that need new poles or a new path.</td></tr>
-<tr><td><b>Route ratio</b></td><td>(POP-to-tap + new cable) &divide; new feeder from the POP. Small is efficient.</td></tr>
+<tr><td><b>Route vs new feeder</b></td><td>(POP-to-tap-point + new cable) &divide; a new feeder from the POP. 1.00&times; is the same length; smaller is better.</td></tr>
+<tr><td><b>Helper line</b></td><td>A straight temporary line where there is no road or cable data. Always redraw it along poles or roads.</td></tr>
+<tr><td><b>Slack / closure / OTB</b></td><td>Spare cable loop / splice box / termination box at the POP.</td></tr>
 <tr><td><b>Optical budget</b></td><td>Total light loss from the OLT to the customer, in dB; it must stay below the class limit.</td></tr>
 <tr><td><b>Splitter 1:4, 1:8</b></td><td>A passive part that divides the light into 4 or 8 outputs.</td></tr>
-<tr><td><b>Compilation folder F/T</b></td><td>Folder name in the feeder design compilation: <code>F2_T3</code> = feeder 2, third tap.</td></tr>
+<tr><td><b>Compilation folder F/T</b></td><td>Folder name in the feeder design compilation: <code>F2_T3</code> = feeder 2, route 3.</td></tr>
+<tr><td><b>Cable inventory</b></td><td>A KMZ of all installed cables in the network, with their spare fibre counts.</td></tr>
 </table>
 
 <h2 id="sources">Standards and sources</h2>
@@ -213,7 +237,8 @@ processed by Sentinel Hub, Copernicus Data Space Ecosystem; Powered by Esri | Es
 User Community.</p>
 
 <h2 id="privacy">Privacy and internet</h2>
-<ul><li>Your files never leave your computer. Tembuku reads KMZ files without unpacking them to disk and rejects unsafe content.</li>
+<ul><li>Your files never leave your computer. Tembuku reads KMZ files without unpacking them to disk and rejects unsafe content.
+ZIP bundles are unpacked only into Tembuku's own cache folder, with limits on size and number of files.</li>
 <li>Internet is used only for road lines from OpenStreetMap around your FDTs (once per area, kept for 90 days) and for
 the basemaps you choose to show. Nothing about your data is uploaded. You can switch this off, or use your own road layer under Advanced.</li>
 <li>The public road server is free and shared. Its operators ask heavy, regular users (such as companies) to use their own or

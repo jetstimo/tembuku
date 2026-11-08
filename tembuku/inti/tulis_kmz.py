@@ -116,13 +116,14 @@ def _isi_traksi(w, h, prm, ke_ll):
         def udara():
             for c in CORE:
                 w.folder("New Cable %dC" % c, lambda c=c: [w.garis("%dC" % c, ll, "kabel%d" % c,
-                                                                      "Tembuku: kabel baru") for ll in kab_baru.get(c, [])])
+                                                                      "Kabel baru usulan Tembuku") for ll in kab_baru.get(c, [])])
         w.folder("New Cable Aerial/Udara", udara)
 
         def colo():
             if sel and sel.get("colo_xy"):
                 w.garis("Colo Cable", [ke_ll(p) for p in sel["colo_xy"]], "infra_COLO_CABLE",
-                        "Colo %s %s (%s)" % (sel["label_colo"], sel["nama"], sel["ket_kapasitas"]))
+                        "Feeder yang dipakai dari POP ke titik sambung: %s %s (%s)" % (
+                            sel["label_colo"], sel["nama"], sel["ket_kapasitas"]))
         w.folder("Collo Cable", colo)
         w.folder("UG Utilities", lambda: (w.folder("Manhole", lambda: None), w.folder("Handhole", lambda: None)))
     w.folder("Cable", cable)
@@ -133,7 +134,7 @@ def _isi_traksi(w, h, prm, ke_ll):
     def hanger():
         def nh():
             if tap_ll:
-                w.titik("Slack", tap_ll, "ikon_slack", "Slack %d m di titik tap" % prm["slack_m"])
+                w.titik("Slack", tap_ll, "ikon_slack", "Slack %d m di titik sambung (tap)" % prm["slack_m"])
             w.titik("Slack", f["ll"], "ikon_slack", "Slack %d m di FDT" % prm["slack_m"])
         w.folder("New Hanger", nh)
         w.folder("Eksisting Hanger", lambda: None)
@@ -144,10 +145,10 @@ def _isi_traksi(w, h, prm, ke_ll):
             for c in CORE:
                 def isi(c=c):
                     if tap_ll and str(c) == str(prm["closure_tap"]):
-                        w.titik("Closure %d" % c, tap_ll, "ikon_closure", "Closure baru di titik tap (Tembuku)")
+                        w.titik("Closure %d" % c, tap_ll, "ikon_closure", "Closure baru di titik sambung (tap)")
                     if baru and c == 144 and kab_baru.get(144):
-                        w.titik("Closure 144", kab_baru[144][0][-1], "ikon_closure", "Slack 144: pastikan tidak satu "
-                                "titik dengan slack feeder lain (slide 9)")
+                        w.titik("Closure 144", kab_baru[144][0][-1], "ikon_closure", "Slack 144: pastikan tidak berimpit "
+                                "dengan slack feeder lain")
                 w.folder("New Closure %d" % c, isi)
         w.folder("New Closure", nc)
         w.folder("Eksisting Closure", lambda: None)
@@ -186,7 +187,7 @@ def _isi_traksi(w, h, prm, ke_ll):
                             w.garis(mesin.label_kelas(kelas), ll, "infra_" + kelas, ref)
                 w.folder("Colo Pole %dC" % c, isi)
         w.folder("Collo Tiang", tiang)
-        w.folder("New Infra", lambda: [w.garis("New Infra", ll, "infra_NEW_INFRA", "tiang baru / jalur jalan")
+        w.folder("New Infra", lambda: [w.garis("New Infra", ll, "infra_NEW_INFRA", "Butuh tiang atau jalur baru")
                                        for ll, _r in infra.get("NEW_INFRA", [])])
     w.folder("Keterangan Infra", ket)
     return bantu
@@ -196,16 +197,16 @@ def _analisis_folder(w, h, ke_ll, bantu):
     def isi():
         for ll in bantu:
             w.garis("GARIS BANTU - gambar ulang mengikuti jalan/tiang", ll, "infra_GARIS_BANTU",
-                    "Tidak ada data jalan di ruas ini: garis lurus, bukan jalur pasang")
+                    "Tidak ada data jalan atau kabel di bagian ini: garis lurus sementara, bukan jalur pasang. "
+                    "Gambar ulang mengikuti jalan atau tiang.")
         for i, k in enumerate(h["kandidat"][:5]):
             w.garis("#%d %s %s" % (i + 1, k["label_colo"], k["nama"] or k["id"]), [ke_ll(k["rute"]["titik"][0]),
                                                                                     h["fdt"]["ll"]],
                     "kandidat" if k["lolos"] else "kandidat_tolak",
-                    "kapasitas %s (%s); kabel baru %d m; arah cos %s; rasio jalur %s; %s" % (
-                        k["kapasitas"], k["ket_kapasitas"], k["kabel_baru_m"], k["cos"], k.get("rasio_jalur"),
-                        "; ".join(k["gagal"] + k["catatan"]) or "lolos"))
-            w.titik("Tap #%d" % (i + 1), ke_ll(k["rute"]["titik"][0]), "ikon_tap", k["nama"] or "")
-    w.folder("TEMBUKU - analisis %s (%s)" % (h["fdt"]["kode"], h["keputusan"]), isi)
+                    mesin.uraian_kandidat(k))
+            w.titik("Tap #%d" % (i + 1), ke_ll(k["rute"]["titik"][0]), "ikon_tap",
+                    "Titik sambung (tap) kandidat #%d: %s" % (i + 1, k["nama"] or k["id"]))
+    w.folder("TEMBUKU - analisis %s (%s)" % (h["fdt"]["kode"], mesin.nama_keputusan(h["keputusan"])), isi)
 
 
 def tulis(hasil, path, prm, judul=None):

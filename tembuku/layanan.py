@@ -12,6 +12,7 @@ import time
 
 from .inti import indeks, laporan, mesin, osm, profil, sumber, tulis_kmz
 from .inti import validasi as V
+from .inti.teks import T
 
 UBIN = 0.05              # derajat (~5,5 km): satu permintaan Overpass per ubin, disimpan 90 hari
 UMUR_CACHE_HARI = 90
@@ -69,9 +70,11 @@ class Sesi(object):
         self.peta_laporan = None        # {nama, url, atrib}: peta resolusi tinggi milik pengguna, hanya bila diizinkan
         self.istilah = profil.istilah(lokasi_istilah(folder_cache) if istilah is None else istilah)
         if self.istilah.get("_galat"):
-            self.temuan.tambah(V.PERINGATAN, "Konfigurasi", "berkas istilah perusahaan tidak dapat dibaca (%s); label "
-                               "bawaan dipakai" % self.istilah["_galat"][:160], "istilah.json",
-                               "periksa format JSON berkas istilah.json")
+            self.temuan.tambah(V.PERINGATAN, "Pengaturan", T("berkas label perusahaan tidak bisa dibaca (%s); label bawaan "
+                                                             "dipakai", "the company label file cannot be read (%s); the "
+                                                             "built-in labels are used") % self.istilah["_galat"][:160],
+                               "istilah.json", T("periksa penulisan JSON di istilah.json",
+                                                 "check the JSON in istilah.json"))
         mesin.pakai_istilah(self.istilah)
         sumber.pakai_istilah(self.istilah)
 
@@ -84,7 +87,8 @@ class Sesi(object):
 
     # ------------------------------------------------------------------ 1. pra-cek (cepat, tanpa indeks)
     def pra_cek(self, target_manual=False):
-        self.peran = sumber.kumpulkan(self.paths, self.temuan)
+        self.bukti = {}
+        self.peran = sumber.kumpulkan(self.paths, self.temuan, self.bukti, os.path.join(self.cache, "zip"))
         V.cek_peran(self.peran, self.temuan, target_manual)
         return self.temuan
 
@@ -97,13 +101,21 @@ class Sesi(object):
         pops = []
         for p in self.peran.get("POP", []):
             pops.extend(sumber.baca_pop(p, self.temuan))
+        for p in self.peran.get("TARGET", []):          # berkas titik FDT yang juga memuat lokasi POP/OLT/STO
+            tambahan = sumber.baca_pop(p, self.temuan, hanya_bertanda=True)
+            if tambahan:
+                pops.extend(tambahan)
+                self.temuan.tambah(V.INFO, "Kelengkapan", T("%d titik POP/OLT/STO di berkas ini ikut dipakai sebagai POP",
+                                                            "%d POP/OLT/STO points in this file are also used as POPs")
+                                   % len(tambahan), os.path.basename(p))
         self.target = []
         sudah = set()
         for p in self.peran.get("TARGET", []):
             for f in sumber.baca_target(p, self.temuan):
                 if f["kode"].upper() in sudah:
-                    self.temuan.tambah(V.INFO, "Kelengkapan (komisi)", "FDT %s ada di lebih dari satu berkas; dipakai "
-                                       "sekali" % f["kode"], os.path.basename(p))
+                    self.temuan.tambah(V.INFO, "Kelengkapan", T("FDT %s ada di lebih dari satu berkas; dipakai sekali",
+                                                                "FDT %s is in more than one file; it is used once")
+                                       % f["kode"], os.path.basename(p))
                     continue
                 sudah.add(f["kode"].upper())
                 self.target.append(f)
@@ -111,8 +123,11 @@ class Sesi(object):
         for f in self.target:
             if f["kode"].upper() in sudah_compile:
                 f["sudah_di_compile"] = True
-                self.temuan.tambah(V.INFO, "Konsistensi logis", "FDT %s sudah ada di Compile APD Feeder (sudah punya "
-                                   "feeder); tetap dianalisis sebagai pembanding" % f["kode"])
+                self.temuan.tambah(V.INFO, "Kesesuaian data", T("FDT %s sudah ada di compile desain feeder (sudah punya "
+                                                                "feeder); tetap dianalisis sebagai pembanding",
+                                                                "FDT %s is already in the feeder design compilation (it "
+                                                                "already has a feeder); it is still analysed for "
+                                                                "comparison") % f["kode"])
         # area kerja = sekitar FDT target, compile dan POP: hanya area ini yang diindeks dari KMZ kabel nasional
         titik = [f["ll"] for f in self.target] + [p["ll"] for p in pops]
         for c in comps:
@@ -130,9 +145,13 @@ class Sesi(object):
                 batal=self._batal))
         self.data = mesin.Data(ix, comps, pops, jalan=self._jalan if (self.pakai_osm or self.jalan_lokal) else None)
         if not self.data.pops:
-            self.temuan.tambah(V.PERINGATAN, "Kelengkapan (omisi)", "tidak ada titik POP/OLT (dari compile atau KMZ "
-                               "All POP): arah feeder dan opsi feeder baru tidak dapat dihitung", "",
-                               "tambahkan KMZ All POP atau KMZ compile yang memuat folder OLT")
+            self.temuan.tambah(V.PERINGATAN, "Kelengkapan", T("tidak ada titik POP/OLT (dari compile atau KMZ daftar "
+                                                              "POP): arah feeder dan pilihan feeder baru tidak bisa dihitung",
+                                                              "no POP/OLT point (from the compilation or a POP list KMZ): "
+                                                              "the feeder direction and the new-feeder option cannot be "
+                                                              "worked out"), "",
+                               T("tambahkan KMZ daftar POP, atau KMZ compile yang memuat folder OLT",
+                                 "add the POP list KMZ, or a compilation KMZ that has an OLT folder"))
         return self.data
 
     def pastikan_area(self, titik):
@@ -244,14 +263,19 @@ class Sesi(object):
         self._ubin_gagal.append(bb)
         if len(self._ubin_gagal) >= 3 and not any(self._ubin.values()):
             self._jalan_gagal = True
-        self.temuan.tambah(V.PERINGATAN, "Kelengkapan (omisi)", "jalan OpenStreetMap %s (%.2f,%.2f) tidak terunduh "
-                           "(%s: %s): ruas tanpa kabel eksisting di area itu digambar sebagai garis bantu" % (
-                               label, bb[1], bb[0], {"LURING": "tidak ada koneksi internet",
-                                                     "BATAS": "server membatasi permintaan",
-                                                     "SIBUK": "server sibuk"}[jenis_galat(galat)],
-                               str(galat)[:90]), "",
-                           "jalankan ulang nanti (area yang gagal dicoba lagi otomatis), atau pilih layer jalan sendiri "
-                           "di bagian Advanced")
+        self.temuan.tambah(V.PERINGATAN, "Kelengkapan", T("peta jalan OpenStreetMap %s (%.2f, %.2f) tidak terunduh (%s): "
+                                                          "di area itu, bagian tanpa kabel yang ada digambar sebagai garis "
+                                                          "bantu lurus", "the OpenStreetMap road map %s (%.2f, %.2f) could "
+                                                          "not be downloaded (%s): in that area, parts without existing "
+                                                          "cable are drawn as straight helper lines") % (
+                               label, bb[1], bb[0], {"LURING": T("tidak ada koneksi internet", "no internet connection"),
+                                                     "BATAS": T("server membatasi permintaan", "the server is limiting "
+                                                                "requests"),
+                                                     "SIBUK": T("server sedang sibuk", "the server is busy")}[
+                                   jenis_galat(galat)]), "",
+                           T("jalankan ulang nanti (area yang gagal dicoba lagi otomatis), atau pakai layer jalan sendiri "
+                             "di bagian Advanced", "run again later (failed areas are retried automatically), or use "
+                             "your own road layer in the Advanced section"))
         return None
 
     def _ubin_osm(self, folder, ix, iy):
@@ -290,7 +314,12 @@ class Sesi(object):
             except Dibatalkan:
                 raise
             except Exception as e:  # satu FDT gagal tidak menghentikan FDT lain
-                self.temuan.tambah(V.PERINGATAN, "Proses", "FDT %s gagal dianalisis: %s" % (f["kode"], str(e)[:150]))
+                self.temuan.tambah(V.PERINGATAN, "Proses", T("FDT %s gagal dianalisis (%s); FDT ini ditandai 'Perlu "
+                                                             "dirancang manual'", "FDT %s could not be analysed (%s); it "
+                                                             "is marked 'Needs manual design'") % (f["kode"], str(e)[:150]),
+                                   "", T("rancang FDT ini secara manual dan kirim log ke pembuat",
+                                         "design this FDT by hand and send the log to the author"))
+                self.hasil.append(mesin.hasil_gagal(f, self.data, self.prm, str(e)[:150]))
         self.data.kecuali = set()
         return self.hasil
 
@@ -334,7 +363,7 @@ class Sesi(object):
         out = {"kmz": [], "html": None, "semua": None, "temuan": None}
         self.progres("Writing the KMZ files and the report", 96)
         for h in hasil:
-            nm = "TEMBUKU_%s_%s.kmz" % (_aman(h["fdt"]["kode"]), h["keputusan"])
+            nm = "TEMBUKU_%s_%s.kmz" % (_aman(h["fdt"]["kode"]), NAMA_BERKAS.get(h["keputusan"], h["keputusan"]))
             out["kmz"].append(tulis_kmz.tulis([h], os.path.join(folder_keluar, nm), self.prm, nm[:-4]))
         if len(hasil) > 1:
             out["semua"] = tulis_kmz.tulis(hasil, os.path.join(folder_keluar, "TEMBUKU_SEMUA_%s.kmz" % tgl), self.prm,
@@ -346,30 +375,46 @@ class Sesi(object):
             out["uji"] = os.path.join(folder_keluar, "TEMBUKU_UJI_AKURASI_%s.csv" % tgl)
             with open(out["uji"], "w", encoding="utf-8-sig", newline="") as fh:
                 w = csv.writer(fh)
-                kol = ["fdt", "traksi", "berkas", "desainer", "tembuku", "cocok", "folder_desainer", "folder_tembuku",
-                       "folder_cocok", "tap_meleset_m", "baru_desainer_m", "baru_tembuku_m", "jalur_sesuai_pct",
-                       "garis_bantu_m", "batas"]
-                w.writerow(kol)
+                kol = [("fdt", "FDT"), ("traksi", "Traksi"), ("berkas", "Berkas"), ("desainer", "Keputusan desainer"),
+                       ("tembuku", "Keputusan Tembuku"), ("cocok", "Keputusan sama"),
+                       ("folder_desainer", "Folder desainer"), ("folder_tembuku", "Folder Tembuku"),
+                       ("folder_cocok", "Folder sama"), ("tap_meleset_m", "Selisih titik sambung (m)"),
+                       ("baru_desainer_m", "Kabel baru desainer (m)"), ("baru_tembuku_m", "Kabel baru Tembuku (m)"),
+                       ("jalur_sesuai_pct", "Jalur sama (%)"), ("garis_bantu_m", "Garis bantu (m)"),
+                       ("batas", "Perlu ditinjau")]
+                w.writerow([j for _k, j in kol])
+
+                def sel(k, v):
+                    if k in ("desainer", "tembuku"):
+                        return str(mesin.nama_keputusan(v)) if v else ""
+                    if isinstance(v, bool):
+                        return "ya" if v else "tidak"
+                    return "" if v is None else v
                 for x in self.nilai_uji:
-                    w.writerow([x[k] for k in kol])
+                    w.writerow([sel(k, x.get(k)) for k, _j in kol])
         meta = {"waktu": laporan.tanggal(), "alat": alat, "temuan": self.temuan.daftar, "uji": uji,
                 "jalan": self.jalan_laporan(hasil),
                 "peta_ekstra": self.peta_laporan or [],
-                "berkas": {k: [os.path.basename(p) for p in v] for k, v in self.peran.items() if v},
-                "parameter": {k: [self.prm[k], v[1], v[2]] for k, v in profil.BAWAAN.items()}}
+                "berkas": {str(sumber.NAMA_PERAN.get(k, "versi lama yang dilewati" if k == "LAIN_VERSI" else k)):
+                           [os.path.basename(p) for p in v] for k, v in self.peran.items() if v},
+                "bukti": {os.path.basename(p): str(a) for p, a in (getattr(self, "bukti", None) or {}).items() if a},
+                "parameter": {profil.LABEL_ID.get(k, k): [self.prm[k], profil.JENIS_ID.get(v[1], v[1]), v[2]]
+                              for k, v in profil.BAWAAN.items()}}
         out["html"] = laporan.tulis(hasil, os.path.join(folder_keluar, "TEMBUKU_LAPORAN_%s.html" % tgl), meta)
         out["csv"] = os.path.join(folder_keluar, "TEMBUKU_RINGKASAN_%s.csv" % tgl)
         with open(out["csv"], "w", encoding="utf-8-sig", newline="") as fh:
             w = csv.writer(fh)
-            w.writerow(["FDT", "Keputusan", "Zona batas", "Folder compile", "Kabel dipetik", "Jenis colo", "Kapasitas",
-                        "Kabel baru (m)", "Garis bantu (m)", "Feeder baru dari POP (m)", "Rasio jalur", "Link budget (dB)",
+            w.writerow(["FDT", "Keputusan", "Perlu ditinjau", "Folder compile (F/T)", "Feeder yang dipakai", "Jenis colo",
+                        "Sisa tube", "Kabel baru (m)", "Garis bantu yang harus digambar ulang (m)",
+                        "Feeder baru dari POP (m)", "Jalur lewat feeder dibanding feeder baru (x)", "Redaman sinyal (dB)",
                         "POP", "Alasan", "Peringatan"])
             for h in hasil:
                 k = h.get("terpilih") or {}
                 fb = h.get("feeder_baru") or {}
                 rute = k.get("rute") or (fb if h["keputusan"] == "FEEDER_BARU" else {})
                 n = h["penomoran"]
-                w.writerow([h["fdt"]["kode"], h["keputusan"], "ya" if h.get("batas") else "",
+                w.writerow([h["fdt"]["kode"], str(mesin.nama_keputusan(h["keputusan"])),
+                            "ya - hampir seimbang" if h.get("batas") else "",
                             "F%d_T%d" % (n["feeder"], n["t"]), k.get("nama", ""), k.get("label_colo", ""),
                             k.get("ket_kapasitas", ""), k.get("kabel_baru_m", round(fb.get("panjang_m", 0)) if
                                                                h["keputusan"] == "FEEDER_BARU" else ""),
@@ -380,6 +425,10 @@ class Sesi(object):
         with open(out["temuan"], "w", encoding="utf-8") as fh:
             fh.write("Tembuku - pemeriksaan input %s\n\n%s\n" % (meta["waktu"], self.temuan.teks() or "Tidak ada temuan."))
         return out
+
+
+NAMA_BERKAS = {"COLO": "PAKAI_FEEDER", "COLO_CEK": "CEK_TUBE", "COLO_MANUAL": "PILIHAN_DESAINER",
+               "FEEDER_BARU": "FEEDER_BARU", "PERLU_MANUAL": "MANUAL"}
 
 
 def _kelompok(ubin, maks):

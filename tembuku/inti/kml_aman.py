@@ -15,6 +15,8 @@ import re
 import xml.etree.ElementTree as ET  # nosec B405 - DOCTYPE/ENTITY ditolak sebelum parsing (lihat _cek_prolog)
 import zipfile
 
+from . import atribut
+
 MAKS_ENTRI = 5000
 MAKS_BYTE = 4 * 1024 ** 3          # 4 GB setelah dekompresi (KML kabel nasional Jawa 0,8 GB)
 MAKS_RASIO = 200                   # zip bomb: KMZ kabel nasional ~11:1
@@ -52,15 +54,35 @@ def _cek_prolog(head):
         raise BerkasDitolak("berkas memuat DOCTYPE/ENTITY (tidak lazim untuk KML, ditolak demi keamanan)")
 
 
+def jenis_isi(path):
+    """Jenis berkas dari ISI (magic bytes), bukan ekstensi: 'KMZ', 'KML', 'ZIP' (zip tanpa KML), atau None."""
+    with open(path, "rb") as fh:
+        head = fh.read(65536)
+    if head[:4] == b"PK\x03\x04":
+        try:
+            with zipfile.ZipFile(path) as zf:
+                nama = [i.filename.lower() for i in zf.infolist()[:MAKS_ENTRI]]
+        except zipfile.BadZipFile:
+            return None
+        return "KMZ" if any(n.endswith(".kml") for n in nama) else "ZIP"
+    teks = head.lstrip(b"\xef\xbb\xbf \t\r\n").lower()
+    if teks.startswith(b"<?xml") or teks.startswith(b"<kml"):
+        return "KML" if b"<kml" in head.lower() else None
+    return None
+
+
 def buka(path):
-    """-> objek file KML (stream) yang aman. KMZ: entri doc.kml atau .kml pertama."""
-    low = path.lower()
-    if low.endswith(".kml"):
+    """-> objek file KML (stream) yang aman. KMZ: entri doc.kml atau .kml pertama. Jenis dikenali dari isi berkas,
+    jadi KMZ yang diberi nama .kml (atau sebaliknya) tetap terbaca."""
+    jenis = jenis_isi(path)
+    if jenis == "KML":
         size = os.path.getsize(path)
         fh = open(path, "rb")
         _cek_prolog(fh.read(PROLOG))
         fh.seek(0)
         return _Hitung(fh, max(size, 1) + 1)
+    if jenis is None:
+        raise BerkasDitolak("bukan KMZ/KML yang sah")
     if not zipfile.is_zipfile(path):
         raise BerkasDitolak("bukan KMZ/zip yang sah")
     zf = zipfile.ZipFile(path)
@@ -172,6 +194,7 @@ def placemarks(path, bbox=None, progres=None):
 def _placemark(el, folders, styles, smap, bbox):
     name = desc = su = None
     inline = None
+    balon = ""
     geoms, attrs = [], {}
     for x in el.iter():
         t = _ln(x.tag)
@@ -191,6 +214,10 @@ def _placemark(el, folders, styles, smap, bbox):
             for y in x:
                 if _ln(y.tag) == "color":
                     inline = (y.text or "").strip()
+        elif t == "BalloonStyle":
+            for y in x:
+                if _ln(y.tag) == "text":
+                    balon = (y.text or "").strip()
     for x in el:
         t = _ln(x.tag)
         if t == "name":
@@ -212,5 +239,7 @@ def _placemark(el, folders, styles, smap, bbox):
         if not ok:
             return None
     st = styles.get(smap.get(su, su) if su else None, (None, None))
+    if desc or balon:
+        attrs = atribut.lengkapi(attrs, desc, balon)
     return {"path": [f for f in folders if f], "name": name or "", "desc": desc or "", "geoms": geoms,
             "attrs": attrs, "style": su or "", "warna": inline or st[0], "ikon": st[1]}

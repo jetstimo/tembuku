@@ -23,9 +23,9 @@ import struct
 import time
 import xml.etree.ElementTree as ET  # nosec B405 - parses single <Placemark> fragments; DOCTYPE checked in kml_aman
 
-from . import kabel, kml_aman
+from . import atribut, baca, kabel, kml_aman
 
-SKEMA = 6
+SKEMA = 7                   # 7: atribut dikenali dari makna (sinonim kolom, tabel keterangan); format non-KML
 POTONG = 64                 # points per stored line chunk (R*Tree granularity)
 SKALA = 1e7                 # coordinates stored as integers of 1e-7 degree (~1 cm)
 SEL = 0.5                   # area cell size (degrees)
@@ -159,6 +159,8 @@ class IndeksKabel(object):
         return self._baca(baru, progres, batal)
 
     def _baca(self, baru, progres, batal):
+        if baca.jenis(self.sumber) not in ("KML", "KMZ"):
+            return self._baca_umum(baru, progres, batal)
         nama = os.path.basename(self.sumber)
         size = max(1, os.path.getsize(self.sumber))
         src = kml_aman.buka(self.sumber)          # zip/XML safety checks (DOCTYPE, zip bomb, zip slip)
@@ -252,6 +254,55 @@ class IndeksKabel(object):
         self.con.commit()
         return n_ambil
 
+    def _baca_umum(self, baru, progres, batal):
+        """Inventaris dalam format selain KML/KMZ (GeoJSON, Shapefile, GeoPackage, ...): dibaca objek per objek."""
+        t0 = time.time()
+        idk = self.con.execute("SELECT coalesce(max(id),0) FROM kabel").fetchone()[0]
+        ida = self.con.execute("SELECT coalesce(max(id),0) FROM atr").fetchone()[0]
+        lebar = None if baru is None else {(cx + dx, cy + dy) for cx, cy in baru for dx in (-1, 0, 1) for dy in (-1, 0, 1)}
+        rows, rt, ar = [], [], []
+        x0 = y0 = 1e9
+        x1 = y1 = -1e9
+        n_pm = n_ambil = 0
+        for pm in baca.placemarks(self.sumber):
+            if batal and batal():
+                raise KeyboardInterrupt("cancelled")
+            lines = [cs for g, cs in pm["geoms"] if g == "LineString" and len(cs) >= 2]
+            if not lines:
+                continue
+            n_pm += 1
+            x, y = lines[0][0]
+            x0, x1, y0, y1 = min(x0, x), max(x1, x), min(y0, y), max(y1, y)
+            if lebar is not None and _sel(x, y) not in lebar:
+                continue
+            n_ambil += 1
+            ida += 1
+            ar.append((ida,) + self._rekam(pm["attrs"], pm["name"]))
+            for cs in lines:
+                for i in range(0, len(cs) - 1, POTONG - 1):
+                    part = cs[i:i + POTONG]
+                    if len(part) < 2:
+                        continue
+                    idk += 1
+                    rows.append((idk, ida, _pack(part)))
+                    rt.append((idk, min(c[0] for c in part), max(c[0] for c in part), min(c[1] for c in part),
+                               max(c[1] for c in part)))
+            if len(rows) >= 20000:
+                self._simpan(ar, rows, rt)
+                ar, rows, rt = [], [], []
+        self._simpan(ar, rows, rt)
+        if baru is None:
+            self._set_meta({"lengkap": "1"})
+        else:
+            self.con.executemany("INSERT OR IGNORE INTO sel VALUES (?,?)", list(baru))
+        if n_pm and x0 < 1e9:
+            self._set_meta({"ekstent": "%.4f,%.4f,%.4f,%.4f" % (x0, y0, x1, y1), "placemark": n_pm})
+        self._set_meta({"detik_terakhir": "%.1f" % (time.time() - t0)})
+        self.con.commit()
+        if progres:
+            progres("Reading %s: %d cables, %d in the work area" % (os.path.basename(self.sumber), n_pm, n_ambil), 100)
+        return n_ambil
+
     def _simpan(self, ar, rows, rt):
         if ar:
             self.con.executemany("INSERT INTO atr VALUES (?,?,?,?,?,?,?,?,?,?,?)", ar)
@@ -266,10 +317,14 @@ class IndeksKabel(object):
             el = ET.fromstring(frag)  # nosec B314 - single fragment without DTD (prolog checked by kml_aman.buka)
         except ET.ParseError:
             return None
-        a, lines, nama = {}, [], ""
+        a, lines, nama, desc, balon = {}, [], "", "", ""
         for x in el.iter():
             t = _ln(x.tag)
-            if t == "SimpleData":
+            if t == "description":
+                desc = (x.text or "").strip()
+            elif t == "BalloonStyle":
+                balon = "".join((y.text or "") for y in x if _ln(y.tag) == "text")
+            elif t == "SimpleData":
                 a[x.get("name") or ""] = (x.text or "").strip()
             elif t == "Data":
                 v = next((y for y in x if _ln(y.tag) == "value"), None)
@@ -284,10 +339,23 @@ class IndeksKabel(object):
                 nama = (x.text or "").strip()
         if not lines:
             return None
-        model = a.get("MODEL", "")
-        core, cpt = kabel.kapasitas_model(model, a.get("NAME") or nama)
-        return ((a.get("NAME") or nama, model, a.get("Owner", ""), a.get("PRODUCT", ""), a.get("STATUS", ""),
-                 kabel.angka(a.get("NUM_SPARE_")), core, cpt, a.get("NAMOBJ", ""), ""), lines)
+        if desc or balon:
+            a = atribut.lengkapi(a, desc, balon)
+        return IndeksKabel._rekam(a, nama), lines
+
+    @staticmethod
+    def _rekam(a, nama):
+        """Atribut keputusan dari kolom apa pun namanya (lihat atribut.SINONIM): nama, model, pemilik, produk, status,
+        core cadangan, ukuran core, grup."""
+        nm = atribut.nilai(a, "nama") or nama
+        model = atribut.nilai(a, "model") or ""
+        core, cpt = kabel.kapasitas_model(model, nm)
+        if core is None:
+            c2 = atribut.core_dari(a, nm)
+            if c2:
+                core, cpt = c2, 12 if c2 >= 12 else c2
+        return (nm, model, atribut.nilai(a, "owner") or "", atribut.nilai(a, "produk") or "",
+                atribut.nilai(a, "status") or "", atribut.spare_dari(a), core, cpt, atribut.nilai(a, "grup") or "", "")
 
     def di_bbox(self, bb):
         """bb=(minlon,minlat,maxlon,maxlat) -> list of cable dicts (consecutive chunks of one cable re-joined)."""

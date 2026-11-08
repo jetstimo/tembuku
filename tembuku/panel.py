@@ -2,7 +2,7 @@
 # Tembuku - panel hasil interaktif. Copyright (C) 2026 Joseph Edward Timothy Siahaan. GPL-3.0-or-later (lihat LICENSE).
 """Right-hand panel: list of FDTs with their decisions, the reasons in plain words, and the candidate feeders.
 Double-click another candidate to USE it (the designer always has the final say): the route is redrawn and the KMZ can
-be saved again with that choice. Reasons and notes come from the results and are written in Indonesian."""
+be saved again with that choice. Reasons and notes are shown in English here and in Indonesian in the report."""
 import os
 
 from qgis.core import QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsProject, QgsRectangle
@@ -10,13 +10,15 @@ from qgis.PyQt import QtGui, QtWidgets
 from qgis.PyQt.QtCore import QUrl
 
 from . import qtc
+from .inti import mesin
+from .inti.teks import en
 from .inti import geo
 
 from .plugin import KEPUTUSAN_EN as NAMA
 
 WARNA = {"COLO": "#0f766e", "COLO_CEK": "#b45309", "COLO_MANUAL": "#7c3aed", "FEEDER_BARU": "#1d4ed8",
          "PERLU_MANUAL": "#b91c1c"}
-KAPASITAS = {"LOLOS": "Free tubes available", "PENUH": "Full", "BELUM_TERVERIFIKASI": "Not verified",
+KAPASITAS = {"LOLOS": "Has a free tube", "PENUH": "Full", "BELUM_TERVERIFIKASI": "Not confirmed",
              "BUKAN_FEEDER": "Not a feeder"}
 
 
@@ -67,8 +69,15 @@ class PanelTembuku(QtWidgets.QDockWidget):
         self.info.setOpenExternalLinks(False)
         lay.addWidget(self.info, 3)
         self.tabel = QtWidgets.QTableWidget(0, 6)
-        self.tabel.setHorizontalHeaderLabels(["#", "Existing cable", "Free tubes", "New cable", "Route ratio",
-                                              "Result"])
+        self.tabel.setHorizontalHeaderLabels(["#", "Existing feeder", "Free tubes", "New cable to FDT",
+                                              "Route vs new feeder", "Result"])
+        for c, tip in ((2, "Whether the feeder still has a free tube for this FDT"),
+                       (3, "Length of the new cable from the tap point on this feeder to the FDT"),
+                       (4, "Route through this feeder (POP to tap point plus new cable) compared with a new feeder "
+                           "straight from the POP. 1.00x = the same length; above the limit (1.24x by default) the "
+                           "route is a long way round"),
+                       (5, "Tembuku's verdict for this feeder")):
+            self.tabel.horizontalHeaderItem(c).setToolTip(tip)
         self.tabel.setEditTriggers(qtc.NO_EDIT)
         self.tabel.setSelectionBehavior(qtc.SELECT_ROWS)
         self.tabel.horizontalHeader().setSectionResizeMode(qtc.TO_CONTENTS)
@@ -104,7 +113,7 @@ class PanelTembuku(QtWidgets.QDockWidget):
         self.daftar.clear()
         for h in self.hasil:
             it = QtWidgets.QListWidgetItem("%s  -  %s%s" % (h["fdt"]["kode"], NAMA.get(h["keputusan"], h["keputusan"]),
-                                                             "  (borderline)" if h.get("batas") else ""))
+                                                             "  (please review)" if h.get("batas") else ""))
             it.setForeground(QtGui.QBrush(QtGui.QColor(WARNA.get(h["keputusan"], "#333"))))
             self.daftar.addItem(it)
         if self.hasil:
@@ -121,13 +130,13 @@ class PanelTembuku(QtWidgets.QDockWidget):
             _esc(h["fdt"]["kode"]), WARNA.get(h["keputusan"]), NAMA.get(h["keputusan"]))]
         teks.append("<p>Compilation folder: <b>F%d_T%d</b> &middot; POP %s (%s m away)%s</p>" % (
             n["feeder"], n["t"], _esc(h["pop"]["nama"] if h["pop"] else "-"), h["jarak_pop_m"],
-            " &middot; new cable <b>%d m</b>" % sel["kabel_baru_m"] if sel else ""))
+            " &middot; new cable <b>{:,} m</b>".format(sel["kabel_baru_m"]) if sel else ""))
         if h.get("batas"):
-            teks.append("<p style='color:#7c3aed'><b>Borderline:</b> reusing the feeder and building a new one are "
-                        "almost equally good here. Please review both before deciding.</p>")
-        teks.append("<p style='color:#5b6b78;margin:4px 0'>Why (from the report, in Indonesian):</p>")
-        teks += ["<p style='background:#eef6f6;padding:4px'>%s</p>" % _esc(a) for a in h["alasan"]]
-        teks += ["<p style='background:#fff4e0;padding:4px'>&#9888; %s</p>" % _esc(a) for a in h["peringatan"]]
+            teks.append("<p style='color:#7c3aed'><b>Please review:</b> using the existing feeder and building a new "
+                        "one are almost equally good here. Check both before deciding.</p>")
+        teks.append("<p style='color:#5b6b78;margin:4px 0'>Why:</p>")
+        teks += ["<p style='background:#eef6f6;padding:4px'>%s</p>" % _esc(en(a)) for a in h["alasan"]]
+        teks += ["<p style='background:#fff4e0;padding:4px'>&#9888; %s</p>" % _esc(en(a)) for a in h["peringatan"]]
         rute = sel["rute"] if sel else h.get("feeder_baru")
         if rute and rute.get("bantu_m", 0) > 1:
             teks.append("<p style='background:#fde8e8;padding:4px'><b>%d m is a straight helper line</b> (no road or "
@@ -139,11 +148,11 @@ class PanelTembuku(QtWidgets.QDockWidget):
             self.tabel.insertRow(r)
             vals = [str(r + 1), "%s %s" % (k["label_colo"], k["nama"] or k["id"]),
                     KAPASITAS.get(k["kapasitas"], k["kapasitas"]), "%d m" % k["kabel_baru_m"],
-                    "-" if k.get("rasio_jalur") is None else str(k["rasio_jalur"]),
-                    "Passes all checks" if k["lolos"] else "; ".join(k["gagal"] + k["catatan"])[:120]]
+                    "-" if k.get("rasio_jalur") is None else "%.2fx" % k["rasio_jalur"],
+                    en(mesin.vonis_kandidat(k))[:160]]
             for c, v in enumerate(vals):
                 it = QtWidgets.QTableWidgetItem(v)
-                it.setToolTip("%s\n%s" % (k["ket_kapasitas"], "; ".join(k["gagal"] + k["catatan"])))
+                it.setToolTip(en(mesin.uraian_kandidat(k)))
                 if sel is k:
                     f = it.font()
                     f.setBold(True)

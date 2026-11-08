@@ -18,6 +18,7 @@ class _T(object):           # tipe field Qt5/Qt6
     String, Int = _STR, _INT
 
 from .inti import geo, mesin
+from .inti.teks import en
 from .plugin import KEPUTUSAN_EN
 
 WARNA = {"TIANG_COMPILE": "#0e7c7b", "TIANG_NASIONAL": "#00b4d8", "NEW_INFRA": "#22c55e", "GARIS_BANTU": "#ef4444",
@@ -80,17 +81,17 @@ def tampilkan(hasil, judul="Tembuku", ganti=None):
                 proj.removeMapLayer(lyr_node.layerId())
             root.removeChildNode(g)
     grp = root.insertGroup(0, judul)
-    jalur = _layer("LineString", "Proposed cable route", [("fdt", _T.String), ("keputusan", _T.String),
-                                                  ("kelas", _T.String), ("panjang_m", _T.Int)])
-    colo = _layer("LineString", "Existing feeder used (POP to tap)", [("fdt", _T.String), ("kabel", _T.String),
-                                                        ("panjang_m", _T.Int)])
+    jalur = _layer("LineString", "Proposed cable route", [("fdt", _T.String), ("decision", _T.String),
+                                                  ("route_type", _T.String), ("length_m", _T.Int)])
+    colo = _layer("LineString", "Existing feeder used (POP to tap point)", [("fdt", _T.String), ("feeder", _T.String),
+                                                        ("length_m", _T.Int)])
     kand = _layer("LineString", "Candidate feeders", [("fdt", _T.String), ("no", _T.Int),
-                                                     ("nama", _T.String), ("status", _T.String),
-                                                     ("kapasitas", _T.String), ("kabel_baru_m", _T.Int),
-                                                     ("alasan", _T.String)])
-    titik = _layer("Point", "FDT, POP and tap points", [("jenis", _T.String), ("label", _T.String),
-                                               ("fdt", _T.String), ("keputusan", _T.String)])
-    desain = _layer("LineString", "Designer's own design (for comparison)", [("fdt", _T.String), ("jenis", _T.String)])
+                                                     ("feeder", _T.String), ("status", _T.String),
+                                                     ("free_tubes", _T.String), ("new_cable_m", _T.Int),
+                                                     ("verdict", _T.String)])
+    titik = _layer("Point", "FDT, POP and tap points", [("kind", _T.String), ("label", _T.String),
+                                               ("fdt", _T.String), ("decision", _T.String)])
+    desain = _layer("LineString", "Designer's own design (for comparison)", [("fdt", _T.String), ("kind", _T.String)])
     rd = []
     rj, rc, rk, rt = [], [], [], []
     for h in hasil:
@@ -101,17 +102,18 @@ def tampilkan(hasil, judul="Tembuku", ganti=None):
         if rute:
             for kelas, _ref, xy in rute["segmen"]:
                 ll = [L.balik(p) for p in xy]
-                rj.append((_garis(ll), [kode, h["keputusan"], mesin.label_kelas(kelas), int(geo.panjang_deg(ll))]))
+                rj.append((_garis(ll), [kode, KEPUTUSAN_EN.get(h["keputusan"], h["keputusan"]), mesin.label_kelas_en(kelas),
+                                        int(geo.panjang_deg(ll))]))
         if sel and sel.get("colo_xy"):
             ll = [L.balik(p) for p in sel["colo_xy"]]
             rc.append((_garis(ll), [kode, sel["nama"] or sel["id"], int(geo.panjang_deg(ll))]))
         for i, k in enumerate(h["kandidat"][:6]):
             st = "Candidate passes" if k["lolos"] else "Candidate rejected"
-            rk.append((_garis(k["ll_kabel"]), [kode, i + 1, k["nama"] or k["id"], st, k["ket_kapasitas"],
-                                               k["kabel_baru_m"], "; ".join(k["gagal"] + k["catatan"])[:250]]))
+            rk.append((_garis(k["ll_kabel"]), [kode, i + 1, k["nama"] or k["id"], st, en(k["ket_kapasitas"]),
+                                               k["kabel_baru_m"], en(mesin.vonis_kandidat(k))[:250]]))
             tp = L.balik(k["rute"]["titik"][0])
-            rt.append((QgsGeometry.fromPointXY(QgsPointXY(tp[0], tp[1])), ["TAP", "tap #%d" % (i + 1), kode,
-                                                                            h["keputusan"]]))
+            rt.append((QgsGeometry.fromPointXY(QgsPointXY(tp[0], tp[1])), ["TAP", "tap point #%d" % (i + 1), kode,
+                                                                            KEPUTUSAN_EN.get(h["keputusan"], h["keputusan"])]))
         g = h["fdt"].get("_uji")
         if g:
             for ll in g["kabel_baru"]:
@@ -120,7 +122,7 @@ def tampilkan(hasil, judul="Tembuku", ganti=None):
                 rd.append((_garis(ll), [kode, "existing feeder used"]))
         f = h["fdt"]["ll"]
         rt.append((QgsGeometry.fromPointXY(QgsPointXY(f[0], f[1])), ["FDT", "%s (%s)" % (kode, KEPUTUSAN_EN.get(h["keputusan"], h["keputusan"])), kode,
-                                                                      h["keputusan"]]))
+                                                                      KEPUTUSAN_EN.get(h["keputusan"], h["keputusan"])]))
         if h["pop"]:
             p = h["pop"]["ll"]
             rt.append((QgsGeometry.fromPointXY(QgsPointXY(p[0], p[1])), ["POP", h["pop"]["nama"], kode, ""]))
@@ -129,14 +131,14 @@ def tampilkan(hasil, judul="Tembuku", ganti=None):
     _isi(kand, rk)
     _isi(titik, rt)
     _isi(desain, rd)
-    _gaya_kategori(desain, "jenis", {"new cable": ("#111111", 0.8, "dash"), "existing feeder used": ("#555555", 0.5, "dot")})
-    _gaya_kategori(jalur, "kelas", {mesin.label_kelas(k): (WARNA[k], 1.6 if k != "GARIS_BANTU" else 0.9,
+    _gaya_kategori(desain, "kind", {"new cable": ("#111111", 0.8, "dash"), "existing feeder used": ("#555555", 0.5, "dot")})
+    _gaya_kategori(jalur, "route_type", {mesin.label_kelas_en(k): (WARNA[k], 1.6 if k != "GARIS_BANTU" else 0.9,
                                                            "dash" if k == "GARIS_BANTU" else "solid")
                                     for k in ("TIANG_COMPILE", "TIANG_NASIONAL", "NEW_INFRA", "GARIS_BANTU")})
     colo.setRenderer(QgsSingleSymbolRenderer(QgsLineSymbol.createSimple({"color": WARNA["Colo Cable"], "width": "1.2"})))
     _gaya_kategori(kand, "status", {"Candidate passes": (WARNA["Kandidat lolos"], 1.0, "solid"),
                                     "Candidate rejected": (WARNA["Kandidat ditolak"], 0.5, "dot")})
-    _gaya_kategori(titik, "jenis", {"FDT": (WARNA["FDT"], 4.5, "square"), "POP": (WARNA["POP"], 5.0, "star"),
+    _gaya_kategori(titik, "kind", {"FDT": (WARNA["FDT"], 4.5, "square"), "POP": (WARNA["POP"], 5.0, "star"),
                                     "TAP": (WARNA["TAP"], 2.6, "circle")}, garis=False)
     _label(titik, "label")
     for lyr in (titik, jalur, colo, kand) + ((desain,) if rd else ()):

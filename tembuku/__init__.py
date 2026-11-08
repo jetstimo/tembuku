@@ -6,7 +6,7 @@
 # License, or (at your option) any later version, with the additional terms of section 7 in LICENSE
 # (author attribution, no misrepresentation of origin, no trademark licence).
 
-__version__ = "1.1.1"
+__version__ = "1.2.0"
 __product__ = "Tembuku - Feeder Tap Designer"
 __author__ = "Joseph Edward Timothy Siahaan"
 

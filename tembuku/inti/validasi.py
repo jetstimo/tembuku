@@ -22,7 +22,10 @@ import difflib
 import os
 import re
 
+from .teks import T
+
 FATAL, PERBAIKI, PERINGATAN, INFO = "FATAL", "DIKOREKSI", "PERINGATAN", "INFO"
+NAMA_TINGKAT = {FATAL: "TIDAK BISA JALAN", PERBAIKI: "DIKOREKSI OTOMATIS", PERINGATAN: "PERLU DICEK", INFO: "CATATAN"}
 
 # ----------------------------------------------------------------------------- kosakata template Compile APD Feeder
 KANON = [
@@ -65,7 +68,7 @@ class Temuan(object):
         return out
 
     def teks(self):
-        return "\n".join("[%s] %s%s%s" % (t["tingkat"], ("%s: " % t["berkas"]) if t["berkas"] else "", t["pesan"],
+        return "\n".join("[%s] %s%s%s" % (NAMA_TINGKAT.get(t["tingkat"], t["tingkat"]), ("%s: " % t["berkas"]) if t["berkas"] else "", t["pesan"],
                                           (" -> " + t["saran"]) if t["saran"] else "") for t in self.daftar)
 
 
@@ -108,8 +111,9 @@ def kanon_folder(nama, temuan=None, berkas=""):
             hasil = _mirip_unik(up, list(_KANON_UP))
             hasil = _KANON_UP[hasil] if hasil else None
     if hasil and hasil != nama and temuan is not None and _beda_bermakna(hasil, nama):
-        temuan.tambah(PERBAIKI, "Konsistensi konseptual", "folder '%s' dibaca sebagai '%s'" % (nama, hasil), berkas,
-                      "rapikan nama folder agar sama dengan template compile")
+        temuan.tambah(PERBAIKI, "Nama folder", T("folder '%s' dibaca sebagai '%s'", "folder '%s' read as '%s'") % (
+            nama, hasil), berkas, T("samakan nama folder dengan contoh compile", "rename the folder to match the "
+                                    "compilation layout"))
     return hasil or nama
 
 
@@ -151,16 +155,19 @@ def baca_traksi(nama, temuan=None, berkas=""):
             return None
         best = [b1]
         if temuan is not None:
-            temuan.tambah(PERBAIKI, "Konsistensi konseptual", "nama traksi '%s': '%s' dibaca '%s'" % (nama, kmz, best[0]),
-                          berkas)
+            temuan.tambah(PERBAIKI, "Nama folder", T("nama traksi '%s': '%s' dibaca '%s'",
+                                                     "route folder '%s': '%s' read as '%s'") % (nama, kmz, best[0]), berkas)
     t = re.sub(r"\s+", "", m.group(2)).upper().replace("T", "")
     rest = (m.group(5) or "").strip(" _-")
     tgl = re.search(r"(\d{1,2})[-./](\d{1,2})[-./](\d{4})", rest)
     area = rest[:tgl.start()].strip(" _-") if tgl else rest
     baku = re.match(r"^F\d+_T[\d\-T]+_\d{6,12}_APD (Feeder|Distribusi) KMZ_", nama or "")
     if not baku and temuan is not None:
-        temuan.tambah(PERBAIKI, "Konsistensi konseptual", "nama traksi tidak baku '%s' dikenali sebagai F%s_T%s"
-                      % (nama, m.group(1), t), berkas, "format baku: F<n>_T<k>_<ID>_APD Feeder KMZ_<area>_<dd-mm-yyyy>")
+        temuan.tambah(PERBAIKI, "Nama folder", T("nama traksi '%s' tidak mengikuti pola baku; dikenali sebagai F%s_T%s",
+                                                 "route folder '%s' does not follow the usual pattern; recognised as "
+                                                 "F%s_T%s") % (nama, m.group(1), t), berkas,
+                      T("pola baku: F<n>_T<k>_<ID>_APD Feeder KMZ_<area>_<dd-mm-yyyy>",
+                        "usual pattern: F<n>_T<k>_<ID>_APD Feeder KMZ_<area>_<dd-mm-yyyy>"))
     return {"feeder": int(m.group(1)), "t": t, "cluster": m.group(3), "area": area,
             "tanggal": tgl.group(0) if tgl else None}
 
@@ -170,8 +177,8 @@ def baca_feeder(nama, temuan=None, berkas=""):
     if not m:
         return None
     if temuan is not None and not re.match(r"^Feeder \d+$", nama):
-        temuan.tambah(PERBAIKI, "Konsistensi konseptual", "folder '%s' dibaca sebagai 'Feeder %s'" % (nama, m.group(1)),
-                      berkas)
+        temuan.tambah(PERBAIKI, "Nama folder", T("folder '%s' dibaca sebagai 'Feeder %s'", "folder '%s' read as "
+                                                 "'Feeder %s'") % (nama, m.group(1)), berkas)
     return m.group(1)
 
 
@@ -190,13 +197,19 @@ def koreksi_core(s, temuan=None, berkas="", konteks=""):
         cocok = [c for c in CORE if sorted(str(c)) == sorted(d)]
         if len(cocok) == 1:          # hanya bila satu-satunya ukuran baku dengan digit yang sama
             if temuan is not None:
-                temuan.tambah(PERINGATAN, "Konsistensi domain", "ukuran kabel '%s'%s di luar ukuran baku; dibaca %dC "
-                              "(susunan digit sama) - KOREKSI BERISIKO" % (s, konteks, cocok[0]), berkas,
-                              "mohon konfirmasi ukuran kabel dan perbaiki nama folder")
+                temuan.tambah(PERINGATAN, "Isi data", T("ukuran kabel '%s'%s bukan ukuran baku; dibaca %d core karena "
+                                                        "angkanya sama tetapi urutannya tertukar - mohon dicek",
+                                                        "cable size '%s'%s is not a standard size; read as %d fibres "
+                                                        "because the digits match in a different order - please check")
+                              % (s, konteks, cocok[0]), berkas,
+                              T("pastikan ukuran kabel yang benar dan perbaiki nama folder",
+                                "confirm the real cable size and fix the folder name"))
             return cocok[0]
     if temuan is not None:
-        temuan.tambah(PERINGATAN, "Konsistensi domain", "ukuran kabel '%s'%s tidak dikenal (baku: %s)" % (
-            s, konteks, ", ".join(map(str, CORE))), berkas, "kapasitas kabel ini dianggap belum terverifikasi")
+        temuan.tambah(PERINGATAN, "Isi data", T("ukuran kabel '%s'%s tidak dikenal (ukuran baku: %s core)",
+                                                "cable size '%s'%s not recognised (standard sizes: %s fibres)") % (
+            s, konteks, ", ".join(map(str, CORE))), berkas,
+            T("sisa tube kabel ini dianggap belum pasti", "the free tubes of this cable are treated as unconfirmed"))
     return None
 
 
@@ -212,7 +225,8 @@ def koreksi_fdt(kode, temuan=None, berkas=""):
     if m:
         k = "%s%s-%s%02d-H%02d" % (m.group(1), m.group(2), m.group(3), int(m.group(4)), int(m.group(5)))
     if k != k0 and RX_FDT_BAKU.match(k) and temuan is not None:
-        temuan.tambah(PERBAIKI, "Konsistensi domain", "kode FDT '%s' dibaca '%s'" % (k0, k), berkas)
+        temuan.tambah(PERBAIKI, "Isi data", T("kode FDT '%s' dibaca '%s'", "FDT code '%s' read as '%s'") % (k0, k),
+                      berkas)
     return k if RX_FDT_BAKU.match(k) else k0
 
 
@@ -233,13 +247,16 @@ def koreksi_splitter(s, temuan=None, berkas="", konteks=""):
             n, r = int(m.group(2)), int(m.group(1))
     if n is None:
         if s.strip() and s.strip() not in ("-", "0") and temuan is not None:
-            temuan.tambah(PERINGATAN, "Konsistensi domain", "SPLITTERS '%s'%s tidak terbaca" % (s, konteks), berkas,
-                          "isi dengan format 12x1x4")
+            temuan.tambah(PERINGATAN, "Isi data", T("jumlah splitter '%s'%s tidak terbaca",
+                                                    "splitter count '%s'%s could not be read") % (s, konteks), berkas,
+                          T("tulis dengan format seperti 12x1x4", "write it like 12x1x4"))
         return None, None
     if not re.match(r"^\d+x1x\d+$", s.strip()) and temuan is not None:
-        temuan.tambah(PERBAIKI, "Konsistensi domain", "SPLITTERS '%s'%s dibaca %dx1x%d" % (s, konteks, n, r), berkas)
+        temuan.tambah(PERBAIKI, "Isi data", T("jumlah splitter '%s'%s dibaca %dx1x%d", "splitter count '%s'%s read as "
+                                              "%dx1x%d") % (s, konteks, n, r), berkas)
     if r not in (2, 4, 8, 16, 32) and temuan is not None:
-        temuan.tambah(PERINGATAN, "Konsistensi domain", "rasio splitter 1:%d%s tidak lazim" % (r, konteks), berkas)
+        temuan.tambah(PERINGATAN, "Isi data", T("splitter 1:%d%s tidak lazim", "splitter 1:%d%s is unusual") % (
+            r, konteks), berkas, T("periksa nilai splitter", "check the splitter value"))
     return n, r
 
 
@@ -259,10 +276,12 @@ def angka_longgar(s, temuan=None, berkas="", konteks=""):
     m = re.match(r"^\s*(\d+(?:[.,]\d+)?)\s*(?:core|c|cores|fo)?\s*$", t, re.I)
     if m:
         if temuan is not None:
-            temuan.tambah(PERBAIKI, "Konsistensi domain", "nilai '%s'%s dibaca %s" % (t, konteks, m.group(1)), berkas)
+            temuan.tambah(PERBAIKI, "Isi data", T("nilai '%s'%s dibaca %s", "value '%s'%s read as %s") % (
+                t, konteks, m.group(1)), berkas)
         return float(m.group(1).replace(",", "."))
     if temuan is not None:
-        temuan.tambah(PERINGATAN, "Konsistensi domain", "nilai '%s'%s bukan angka" % (t, konteks), berkas)
+        temuan.tambah(PERINGATAN, "Isi data", T("nilai '%s'%s bukan angka", "value '%s'%s is not a number") % (
+            t, konteks), berkas, T("isi dengan angka", "enter a number"))
     return None
 
 
@@ -274,8 +293,8 @@ def atribut(attrs, nama, temuan=None, berkas="", konteks=""):
     for k, v in attrs.items():
         if re.sub(r"[^A-Z0-9]", "", (k or "").upper()).rstrip("S") == kunci:
             if temuan is not None:
-                temuan.tambah(PERBAIKI, "Konsistensi konseptual", "atribut '%s'%s dibaca sebagai '%s'" % (k, konteks, nama),
-                              berkas)
+                temuan.tambah(PERBAIKI, "Isi data", T("kolom '%s'%s dibaca sebagai '%s'", "field '%s'%s read as '%s'") % (
+                    k, konteks, nama), berkas)
             return v
     return None
 
@@ -291,12 +310,16 @@ def koreksi_titik(p, temuan=None, berkas="", konteks=""):
         return (x, y)
     if INDONESIA[0] <= y <= INDONESIA[2] and INDONESIA[1] <= x <= INDONESIA[3]:
         if temuan is not None:
-            temuan.tambah(PERBAIKI, "Akurasi posisi absolut", "koordinat%s tertukar (lat,lon; KML wajib lon,lat) dan "
-                          "dibalik" % konteks, berkas, "perbaiki urutan koordinat di sumbernya")
+            temuan.tambah(PERBAIKI, "Koordinat", T("koordinat%s tertukar (lintang dan bujur terbalik) dan sudah dibalik",
+                                                   "coordinates%s swapped (latitude and longitude reversed) and turned "
+                                                   "back") % konteks, berkas,
+                          T("perbaiki urutan koordinat di berkas aslinya", "fix the coordinate order in the source file"))
         return (y, x)
     if temuan is not None:
-        temuan.tambah(PERINGATAN, "Akurasi posisi absolut", "koordinat%s (%.5f, %.5f) di luar Indonesia: objek diabaikan"
-                      % (konteks, x, y), berkas, "periksa koordinat")
+        temuan.tambah(PERINGATAN, "Koordinat", T("koordinat%s (%.5f, %.5f) di luar wilayah Indonesia: objek ini tidak "
+                                                 "dipakai", "coordinates%s (%.5f, %.5f) are outside Indonesia: this "
+                                                 "object is skipped") % (konteks, x, y), berkas,
+                      T("periksa koordinatnya", "check its coordinates"))
     return None
 
 
@@ -311,8 +334,10 @@ def koreksi_garis(ll, temuan=None, berkas="", konteks=""):
 
 # ----------------------------------------------------------------------------- pra-cek berkas
 WAJIB_KET = {
-    "JARINGAN": "KMZ Compile APD Feeder dan/atau KMZ inventaris kabel nasional (sumber feeder eksisting, slide 2)",
-    "TARGET": "titik FDT target (KMZ Distribusi / Design Lite / cluster) atau klik FDT di peta",
+    "JARINGAN": T("KMZ compile desain feeder dan/atau KMZ inventaris kabel (sumber feeder yang sudah ada)",
+                  "the feeder design compilation KMZ and/or the cable inventory KMZ (where existing feeders come from)"),
+    "TARGET": T("KMZ berisi titik FDT yang akan dirancang (KMZ distribusi atau desain), atau klik lokasi FDT di peta",
+                "a KMZ with the FDT points to design (distribution or design KMZ), or click the FDT on the map"),
 }
 
 
@@ -321,38 +346,53 @@ def pra_cek_berkas(paths, temuan):
     import hashlib
     ok, sidik = [], {}
     if not paths:
-        temuan.tambah(FATAL, "Kelengkapan (omisi)", "tidak ada berkas KMZ/KML yang dipilih", "",
-                      "pilih folder berisi KMZ atau pilih berkasnya satu per satu")
+        temuan.tambah(FATAL, "Kelengkapan", T("belum ada berkas KMZ/KML yang dipilih", "no KMZ/KML file chosen yet"), "",
+                      T("pilih folder berisi KMZ, atau pilih berkasnya satu per satu",
+                        "choose the folder with your KMZ files, or pick the files one by one"))
         return ok
     for p in paths:
         nama = os.path.basename(p)
         if not os.path.exists(p):
-            saran = "periksa lokasi/nama berkas (mungkin dipindah, diganti nama, atau typo di jalur)"
+            saran = T("periksa lokasi dan nama berkas (mungkin dipindah, diganti nama, atau salah ketik)",
+                      "check where the file is and its name (it may have been moved, renamed or mistyped)")
             d = os.path.dirname(p)
             if os.path.isdir(d):
                 ada = [f for f in os.listdir(d) if f.lower().endswith((".kmz", ".kml"))]
                 mirip = difflib.get_close_matches(nama, ada, n=1, cutoff=0.6)
                 if mirip:
-                    saran = "mungkin maksud Anda '%s'?" % mirip[0]
-            temuan.tambah(FATAL, "Kelengkapan (omisi)", "berkas tidak ditemukan: %s" % p, nama, saran)
+                    saran = T("mungkin maksud Anda '%s'?", "did you mean '%s'?") % mirip[0]
+            temuan.tambah(FATAL, "Kelengkapan", T("berkas tidak ditemukan: %s", "file not found: %s") % p, nama, saran)
             continue
         if os.path.isdir(p):
             continue
-        if not nama.lower().endswith((".kmz", ".kml")):
-            temuan.tambah(PERINGATAN, "Kelengkapan", "bukan KMZ/KML, dilewati", nama)
-            continue
         if os.path.getsize(p) == 0:
-            temuan.tambah(FATAL, "Konsistensi format", "berkas kosong (0 byte)", nama, "unduh/ekspor ulang berkas")
+            temuan.tambah(FATAL, "Berkas", T("berkas kosong (0 byte)", "the file is empty (0 bytes)"), nama,
+                          T("unduh atau ekspor ulang berkasnya", "download or export the file again"))
             continue
         try:
             with open(p, "rb") as fh:
                 h = hashlib.sha256(fh.read(8 << 20)).hexdigest() + str(os.path.getsize(p))
         except OSError as e:
-            temuan.tambah(FATAL, "Konsistensi format", "berkas tidak dapat dibuka: %s" % e, nama,
-                          "tutup berkas di aplikasi lain (Google Earth/Excel) atau periksa izin akses")
+            temuan.tambah(FATAL, "Berkas", T("berkas tidak bisa dibuka: %s", "the file cannot be opened: %s") % e, nama,
+                          T("tutup berkas di aplikasi lain (mis. Google Earth) atau periksa izin aksesnya",
+                            "close the file in other programs (e.g. Google Earth) or check its permissions"))
+            continue
+        from . import baca
+        if baca.jenis(p) is None and baca.rusak(p):
+            temuan.tambah(FATAL, "Berkas", T("berkas rusak atau tidak utuh, isinya tidak bisa dibaca",
+                                             "the file is damaged or incomplete; its content cannot be read"), nama,
+                          T("unduh atau ekspor ulang berkasnya, lalu pilih lagi (atau hapus dari daftar bila tidak dipakai)",
+                            "download or export the file again and pick it again (or remove it from the list if not needed)"))
+            continue
+        if baca.jenis(p) is None:
+            temuan.tambah(PERINGATAN, "Kelengkapan", T("bukan data peta yang dikenali (KMZ, KML, GeoJSON, CSV/Excel "
+                                                       "berkoordinat, Shapefile, GeoPackage), dilewati",
+                                                       "not a recognised map data file (KMZ, KML, GeoJSON, CSV/Excel "
+                                                       "with coordinates, Shapefile, GeoPackage), skipped"), nama)
             continue
         if h in sidik:
-            temuan.tambah(INFO, "Kelengkapan", "isi sama dengan %s, dilewati (duplikat)" % sidik[h], nama)
+            temuan.tambah(INFO, "Kelengkapan", T("isinya sama dengan %s, dilewati (duplikat)",
+                                                 "same content as %s, skipped (duplicate)") % sidik[h], nama)
             continue
         sidik[h] = nama
         ok.append(p)
@@ -375,10 +415,13 @@ def versi_ganda(peran, baca_traksi_berkas, temuan):
             if sama >= 0.5:
                 lama, baru = sorted((a, b), key=os.path.getmtime)
                 buang.add(lama)
-                temuan.tambah(PERBAIKI, "Kelengkapan (komisi)", "dua versi compile untuk area yang sama (%d %% traksi sama): "
-                              "dipakai %s, dilewati %s" % (int(sama * 100), os.path.basename(baru),
-                                                          os.path.basename(lama)), "",
-                              "simpan hanya versi terbaru di folder data")
+                temuan.tambah(PERBAIKI, "Kelengkapan", T("ada dua versi compile untuk area yang sama (%d%% traksi sama): "
+                                                         "dipakai yang terbaru, %s; dilewati %s",
+                                                         "two versions of the compilation for the same area (%d%% of "
+                                                         "routes identical): the newest, %s, is used; %s is skipped")
+                              % (int(sama * 100), os.path.basename(baru), os.path.basename(lama)), "",
+                              T("simpan hanya versi terbaru di folder data", "keep only the newest version in the "
+                                "data folder"))
     peran["COMPILE"] = [p for p in comp if p not in buang]
     peran.setdefault("LAIN_VERSI", []).extend(sorted(buang))
 
@@ -386,14 +429,24 @@ def versi_ganda(peran, baca_traksi_berkas, temuan):
 def cek_peran(peran, temuan, ada_target_manual=False):
     """Peran wajib: minimal satu sumber jaringan; target FDT (kecuali mode klik peta)."""
     if not peran.get("COMPILE") and not peran.get("NASIONAL"):
-        temuan.tambah(FATAL, "Kelengkapan (omisi)", "sumber feeder eksisting tidak ada", "",
-                      "tambahkan " + WAJIB_KET["JARINGAN"])
+        temuan.tambah(FATAL, "Kelengkapan", T("belum ada data feeder yang sudah ada", "no data about existing feeders"),
+                      "", T("tambahkan ", "add ") + WAJIB_KET["JARINGAN"])
     if not peran.get("TARGET") and not ada_target_manual:
-        temuan.tambah(FATAL, "Kelengkapan (omisi)", "titik FDT target tidak ditemukan di berkas mana pun", "",
-                      "tambahkan " + WAJIB_KET["TARGET"])
+        temuan.tambah(FATAL, "Kelengkapan", T("titik FDT yang akan dirancang tidak ditemukan di berkas mana pun",
+                                              "no FDT points to design were found in any file"), "",
+                      T("tambahkan ", "add ") + WAJIB_KET["TARGET"])
     if not peran.get("NASIONAL"):
-        temuan.tambah(PERINGATAN, "Kelengkapan", "KMZ inventaris kabel nasional tidak dipilih: kabel FTTH eksisting di luar "
-                      "compile tidak ikut dianalisis", "", "tambahkan KMZ kabel nasional pulau yang sesuai")
+        temuan.tambah(PERINGATAN, "Kelengkapan", T("KMZ inventaris kabel tidak dipilih: feeder yang sudah ada di luar "
+                                                   "compile tidak ikut diperiksa",
+                                                   "no cable inventory KMZ chosen: existing feeders outside the "
+                                                   "compilation are not checked"), "",
+                      T("tambahkan KMZ inventaris kabel untuk wilayah ini", "add the cable inventory KMZ for this "
+                        "region"))
     for p in peran.get("LAIN", []):
-        temuan.tambah(PERINGATAN, "Kelengkapan (komisi)", "peran berkas tidak dikenali (bukan kabel nasional/Compile/FDT/POP), "
-                      "dilewati", os.path.basename(p), "periksa apakah berkas ini salah pilih")
+        temuan.tambah(PERINGATAN, "Kelengkapan", T("jenis isi berkas tidak dikenali (bukan inventaris kabel, compile, "
+                                                   "titik FDT atau daftar POP), dilewati",
+                                                   "the file content is not recognised (not a cable inventory, "
+                                                   "compilation, FDT points or POP list), skipped"),
+                      os.path.basename(p), T("periksa apakah berkas ini salah pilih; jenisnya bisa dipilih di kolom "
+                                             "'Read as'", "check whether this file was chosen by mistake; you can set "
+                                             "its type in the 'Read as' column"))
