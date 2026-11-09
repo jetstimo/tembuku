@@ -7,7 +7,7 @@ import os
 
 from qgis.core import QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsProject, QgsRectangle
 from qgis.PyQt import QtGui, QtWidgets
-from qgis.PyQt.QtCore import QUrl
+from qgis.PyQt.QtCore import QTimer, QUrl
 
 from . import qtc
 from .inti import mesin
@@ -62,6 +62,26 @@ class PanelTembuku(QtWidgets.QDockWidget):
                                        "FDT on the map.")
         self.status.setWordWrap(True)
         lay.addWidget(self.status)
+        # 1.2.1: progres tugas latar terlihat di panel (dulu hanya di bilah tugas kecil di kanan bawah QGIS)
+        baris_p = QtWidgets.QHBoxLayout()
+        self.bar = QtWidgets.QProgressBar()
+        self.bar.setRange(0, 100)
+        self.bar.setFormat("%p%")
+        self.bar.setTextVisible(True)
+        self.b_batal = QtWidgets.QPushButton("Cancel")
+        self.b_batal.setToolTip("Stop the running job")
+        self.b_batal.clicked.connect(self._batalkan)
+        baris_p.addWidget(self.bar, 1)
+        baris_p.addWidget(self.b_batal)
+        self.w_progres = QtWidgets.QWidget()
+        self.w_progres.setLayout(baris_p)
+        self.w_progres.setVisible(False)
+        lay.addWidget(self.w_progres)
+        self._tugas = None
+        self._judul_tugas = ""
+        self._timer = QTimer(self)
+        self._timer.setInterval(300)
+        self._timer.timeout.connect(self._segarkan_progres)
         self.daftar = QtWidgets.QListWidget()
         self.daftar.currentRowChanged.connect(self._pilih)
         lay.addWidget(self.daftar, 2)
@@ -105,6 +125,63 @@ class PanelTembuku(QtWidgets.QDockWidget):
 
     def set_status(self, teks):
         self.status.setText(teks)
+
+    # ------------------------------------------------------------------ progres tugas latar
+    def ikuti(self, tugas, judul=""):
+        """Tampilkan persentase & langkah tugas latar di panel. Langkah (tugas.teks) dibaca di thread utama lewat
+        timer; persen lewat sinyal progressChanged (antre ke thread utama). Widget tidak disentuh dari thread tugas."""
+        self._tugas, self._judul_tugas = tugas, judul
+        self.bar.setValue(0)
+        self.b_batal.setEnabled(True)
+        self.w_progres.setVisible(True)
+        try:
+            tugas.progressChanged.connect(self._persen)
+        except (AttributeError, TypeError, RuntimeError):
+            pass
+        self._timer.start()
+        self._segarkan_progres()
+        self.show()
+        self.raise_()
+
+    def _persen(self, p):
+        try:
+            self.bar.setValue(int(round(float(p))))
+        except (TypeError, ValueError):
+            pass
+
+    def _segarkan_progres(self):
+        t = self._tugas
+        if t is None:
+            return
+        try:
+            p = max(float(t.progress()), float(self.bar.value()))   # sinyal & timer bisa berselisih sesaat
+        except (AttributeError, RuntimeError, TypeError):
+            p = float(self.bar.value())
+        self.bar.setValue(int(round(p)))
+        langkah = (getattr(t, "teks", "") or "").strip()
+        self.status.setText("%s<b>%d%%</b>%s" % (("%s: " % self._judul_tugas) if self._judul_tugas else "", int(round(p)),
+                                                 (" &middot; %s" % _esc(langkah)) if langkah else " &middot; starting..."))
+        self.setWindowTitle("Tembuku - %d%%" % int(round(p)))
+
+    def selesai_progres(self):
+        self._timer.stop()
+        try:
+            if self._tugas is not None:
+                self._tugas.progressChanged.disconnect(self._persen)
+        except (AttributeError, TypeError, RuntimeError):
+            pass
+        self._tugas = None
+        self.w_progres.setVisible(False)
+        self.setWindowTitle("Tembuku")
+
+    def _batalkan(self):
+        if self._tugas is not None:
+            self.b_batal.setEnabled(False)
+            self.status.setText("Stopping...")
+            try:
+                self._tugas.cancel()
+            except RuntimeError:
+                pass
 
     def tampil(self, hasil, keluaran=None, tambah=False):
         self.hasil = (self.hasil + hasil) if tambah else list(hasil)

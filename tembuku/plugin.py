@@ -257,9 +257,10 @@ class TembukuPlugin:
             return
         self.sesi = sesi
         self._keluar = keluar
-        self.tampil_panel().set_status("Working in the background (see the QGIS progress bar at the bottom)...")
+        panel = self.tampil_panel()
         judul = {"batch": "Tembuku: designing feeders", "uji": "Tembuku: accuracy test"}.get(mode, "Tembuku: preparing data")
         self._tugas = tugas.TugasTembuku(judul, sesi, mode, self._selesai, folder_keluar=keluar)
+        panel.ikuti(self._tugas, {"batch": "Designing feeders", "uji": "Accuracy test"}.get(mode, "Preparing data"))
         QgsApplication.taskManager().addTask(self._tugas)
 
     def analisis_klik(self, lon, lat):
@@ -272,11 +273,13 @@ class TembukuPlugin:
         self.panel.set_status("Analysing the point %.6f, %.6f ..." % (lat, lon))
         self._tugas = tugas.TugasTembuku("Tembuku: clicked FDT", self.sesi, "titik", self._selesai,
                                          titik=(lon, lat, "FDT-KLIK-%d" % self._n_klik))
+        self.panel.ikuti(self._tugas, "Analysing the clicked point")
         QgsApplication.taskManager().addTask(self._tugas)
 
     def _selesai(self, t, ok):
         self._tugas = None
         panel = self.tampil_panel()
+        panel.selesai_progres()
         if not ok:
             panel.set_status("Stopped: %s" % (t.galat or "unknown reason"))
             self.iface.messageBar().pushCritical("Tembuku", t.galat or "The job failed (see View > Panels > Log Messages > Tembuku)")
