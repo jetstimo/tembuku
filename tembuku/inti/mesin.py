@@ -19,7 +19,7 @@
     kabel nasional), tiang FTTH on-going (di atas kabel compile), New Infra (jalan / tiang baru)."""
 import math
 
-from . import geo, osm, profil
+from . import geo, osm, profil, validasi
 from .teks import T, gabung, m, km, kali, db
 from .graf import Graf, INF
 
@@ -40,6 +40,7 @@ class Data(object):
                     self.pops.append(p)
         self.jalan = jalan            # callable(bbox) -> [ {kelas, ll} ] atau None
         self.kecuali = set()          # kunci traksi yang diabaikan (uji / desain ulang)
+        self.audit = []               # [(nama POP, feeder, {T terpakai})] dari tabel catatan tube (opsional)
 
     def kabel_compile(self, bb):
         out = []
@@ -420,6 +421,44 @@ def _pop_traksi(popf, c, data):
     return "?" + c.get("berkas", "")
 
 
+TUBE_PER_FEEDER = 12
+
+
+def _feeder_kabel_inventaris(h, sel, data):
+    """Kabel inventaris yang dipakai sering kali feeder yang SUDAH ADA di compile (sudah dibangun). Feeder-nya dikenali
+    dari (1) ID cluster traksi yang tertulis di nama kabel, atau (2) titik sambung yang berada <= 30 m dari kabel/colo
+    sebuah traksi di compile. -> (nomor feeder, folder POP, compile) atau None (belum ada di compile)."""
+    nama = str(sel.get("nama") or "") + " " + str(sel.get("id") or "")
+    tap = None
+    try:
+        tap = geo.Lokal(*h["lokal"]).balik(sel["rute"]["titik"][0])
+    except (KeyError, IndexError, TypeError):
+        tap = None
+    terbaik = None
+    for c in data.compiles:
+        if c.get("berkas") == "_TEMBUKU_BATCH":
+            continue
+        for (b, popf, fdr, kode), t in c["traksi"].items():
+            inf = t.get("info") or {}
+            if kode in data.kecuali or not inf.get("feeder"):
+                continue
+            if inf.get("cluster") and str(inf["cluster"]) in nama:
+                return int(inf["feeder"]), popf, c
+            if tap is None:
+                continue
+            L = geo.Lokal(*tap)
+            for k in list(t.get("kabel") or []) + list(t.get("colo") or []):
+                if k.get("jenis", "NEW_CABLE") not in ("NEW_CABLE", "COLO_CABLE"):
+                    continue
+                xy = [L.ke(q) for q in k["ll"]]
+                if len(xy) < 2 or min(abs(p[0]) + abs(p[1]) for p in xy) > 5000:
+                    continue
+                d = geo.terdekat_di_garis((0.0, 0.0), xy)[0]
+                if d <= 30.0 and (terbaik is None or d < terbaik[0]):
+                    terbaik = (d, int(inf["feeder"]), popf, c)
+    return terbaik[1:] if terbaik else None
+
+
 def penomoran(h, data):
     """Feeder & nomor T untuk folder KMZ: colo -> Feeder kabel yang dipetik, T berikutnya; feeder baru -> nomor feeder
     berikutnya di POP yang dipakai, T1. Nomor dibaca dari Compile APD Feeder yang dimuat (traksi tersembunyi diabaikan)."""
@@ -432,15 +471,47 @@ def penomoran(h, data):
             if kode in data.kecuali:
                 continue
             inf = t.get("info") or {}
-            nomor_t = [int(x) for x in re.findall(r"\d+", str(inf.get("t", "")))]
+            nomor_t = validasi.nomor_tube(inf.get("t", ""))
             if inf.get("feeder") and nomor_t:
-                traksi.append((_pop_traksi(popf, c, data), popf, int(inf["feeder"]), max(nomor_t)))
+                traksi.append((_pop_traksi(popf, c, data), popf, int(inf["feeder"]), nomor_t))
+    asal = None
     if sel and sel["sumber"] == "COMPILE" and sel.get("feeder"):
-        n = int(sel["feeder"])
         c0 = next((c for c in data.compiles if c["berkas"] == (sel.get("grup") or ("",))[0]), {})
-        pnama = _pop_traksi(sel.get("pop_folder") or "", c0, data)
-        t = max([x[3] for x in traksi if x[0] == pnama and x[2] == n] or [0]) + 1
-        return {"pop_folder": sel.get("pop_folder") or pnama, "feeder": n, "t": t, "baru": False}
+        asal = (int(sel["feeder"]), sel.get("pop_folder") or "", c0)
+    elif sel and h["keputusan"] != "FEEDER_BARU":
+        asal = _feeder_kabel_inventaris(h, sel, data)
+    if asal:
+        n, popf_sel, c0 = asal
+        sel = dict(sel, pop_folder=popf_sel)
+        pnama = _pop_traksi(popf_sel, c0, data)
+        pakai = set()
+        for x in traksi:
+            if x[0] == pnama and x[2] == n:
+                pakai |= x[3]
+        pop_unik = set(x[0] for x in traksi)
+        kunci = [re.sub(r"[^A-Z0-9]", "", str(s or "").upper().replace(".KMZ", "")) for s in (pnama, sel.get("pop_folder"))]
+        for apop, afdr, at in getattr(data, "audit", ()):
+            ap = re.sub(r"[^A-Z0-9]", "", apop.upper())
+            if afdr == n and (len(pop_unik) <= 1 or not ap or any(k and (ap in k or k in ap) for k in kunci)):
+                pakai |= at
+        t = max(pakai or [0]) + 1
+        if t > TUBE_PER_FEEDER:
+            kosong = [i for i in range(1, TUBE_PER_FEEDER + 1) if i not in pakai]
+            if kosong:
+                t = kosong[0]
+                pesan = T("Feeder %d: nomor T terakhir sudah %d, jadi dipakai nomor yang belum tercatat (T%d). Nomor ini "
+                          "baru kandidat: pastikan tube-nya benar-benar kosong sebelum dipakai.",
+                          "Feeder %d: the last T number is already %d, so an unrecorded number is used (T%d). It is only "
+                          "a candidate: confirm the tube is really free before using it.") % (n, TUBE_PER_FEEDER, t)
+            else:
+                pesan = T("Feeder %d: semua %d nomor T sudah tercatat terpakai. Periksa apakah masih ada tube kosong, atau "
+                          "pilih feeder lain / feeder baru.",
+                          "Feeder %d: all %d T numbers are already recorded as used. Check whether a tube is still free, "
+                          "or choose another feeder / a new feeder.") % (n, TUBE_PER_FEEDER)
+            if str(pesan) not in [str(x) for x in h.setdefault("peringatan", [])]:
+                h["peringatan"].append(pesan)
+        return {"pop_folder": sel.get("pop_folder") or pnama, "feeder": n, "t": t, "baru": False,
+                "t_tercatat": sorted(pakai)}
     pnama = pop.get("nama", "POP")
     sama = [x for x in traksi if x[0] == pnama]
     folder = next((x[1] for x in sama if x[1]), pnama)

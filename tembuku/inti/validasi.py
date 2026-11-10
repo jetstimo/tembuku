@@ -159,9 +159,10 @@ def baca_traksi(nama, temuan=None, berkas=""):
                                                      "route folder '%s': '%s' read as '%s'") % (nama, kmz, best[0]), berkas)
     t = re.sub(r"\s+", "", m.group(2)).upper().replace("T", "")
     rest = (m.group(5) or "").strip(" _-")
+    rest = re.sub(r"^APD\s*(Feeder|Distribusi|Distribution)\s*[-_ ]*", "", rest, flags=re.I)   # gaya 'APD Feeder_<area>'
     tgl = re.search(r"(\d{1,2})[-./](\d{1,2})[-./](\d{4})", rest)
     area = rest[:tgl.start()].strip(" _-") if tgl else rest
-    baku = re.match(r"^F\d+_T[\d\-T]+_\d{6,12}_APD (Feeder|Distribusi) KMZ_", nama or "")
+    baku = re.match(r"^F\d+_T[\d\-T,]+_\d{6,12}_APD (Feeder|Distribusi)( KMZ)?_", nama or "")
     if not baku and temuan is not None:
         temuan.tambah(PERBAIKI, "Nama folder", T("nama traksi '%s' tidak mengikuti pola baku; dikenali sebagai F%s_T%s",
                                                  "route folder '%s' does not follow the usual pattern; recognised as "
@@ -211,6 +212,17 @@ def koreksi_core(s, temuan=None, berkas="", konteks=""):
             s, konteks, ", ".join(map(str, CORE))), berkas,
             T("sisa tube kabel ini dianggap belum pasti", "the free tubes of this cable are treated as unconfirmed"))
     return None
+
+
+def nomor_tube(teks):
+    """'T1, T2,T3' / '7-8' / 'T1-T2' / '4' -> {nomor T}. Rentang diurai; angka di luar 1..48 diabaikan."""
+    out = set()
+    for a, b in re.findall(r"(\d{1,2})(?:\s*-\s*T?(\d{1,2}))?", str(teks or "").upper()):
+        a = int(a)
+        b = int(b) if b else a
+        if 1 <= a <= b <= 48:
+            out.update(range(a, b + 1))
+    return out
 
 
 RX_FDT_BAKU = re.compile(r"^[A-Z]{2,4}\d-[A-Z]{2,4}\d{2}-H\d{2}$")

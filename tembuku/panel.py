@@ -9,7 +9,7 @@ from qgis.core import QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsP
 from qgis.PyQt import QtGui, QtWidgets
 from qgis.PyQt.QtCore import QTimer, QUrl
 
-from . import qtc
+from . import _log, qtc
 from .inti import mesin
 from .inti.teks import en
 from .inti import geo
@@ -136,8 +136,8 @@ class PanelTembuku(QtWidgets.QDockWidget):
         self.w_progres.setVisible(True)
         try:
             tugas.progressChanged.connect(self._persen)
-        except (AttributeError, TypeError, RuntimeError):
-            pass
+        except (AttributeError, TypeError, RuntimeError) as e:
+            _log.note(e, "panel progress")
         self._timer.start()
         self._segarkan_progres()
         self.show()
@@ -146,8 +146,8 @@ class PanelTembuku(QtWidgets.QDockWidget):
     def _persen(self, p):
         try:
             self.bar.setValue(int(round(float(p))))
-        except (TypeError, ValueError):
-            pass
+        except (TypeError, ValueError) as e:
+            _log.note(e, "panel progress")
 
     def _segarkan_progres(self):
         t = self._tugas
@@ -168,8 +168,8 @@ class PanelTembuku(QtWidgets.QDockWidget):
         try:
             if self._tugas is not None:
                 self._tugas.progressChanged.disconnect(self._persen)
-        except (AttributeError, TypeError, RuntimeError):
-            pass
+        except (AttributeError, TypeError, RuntimeError) as e:
+            _log.note(e, "panel progress")
         self._tugas = None
         self.w_progres.setVisible(False)
         self.setWindowTitle("Tembuku")
@@ -180,8 +180,8 @@ class PanelTembuku(QtWidgets.QDockWidget):
             self.status.setText("Stopping...")
             try:
                 self._tugas.cancel()
-            except RuntimeError:
-                pass
+            except RuntimeError as e:
+                _log.note(e, "panel progress")
 
     def tampil(self, hasil, keluaran=None, tambah=False):
         self.hasil = (self.hasil + hasil) if tambah else list(hasil)

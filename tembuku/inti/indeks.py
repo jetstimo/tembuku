@@ -156,6 +156,18 @@ class IndeksKabel(object):
                 baru -= luar
             if not baru:
                 return 0
+        isi = self.meta("sel_isi")
+        if baru and isi is not None:
+            # berkas ini sudah pernah dibaca penuh: sel yang (bersama tetangganya) tidak berisi kabel apa pun langsung
+            # ditandai selesai tanpa membaca ulang berkas besar itu
+            ada = set(tuple(int(v) for v in t.split(":")) for t in isi.split(";") if t)
+            kosong = {c for c in baru if not any((c[0] + dx, c[1] + dy) in ada for dx in (-1, 0, 1) for dy in (-1, 0, 1))}
+            if kosong:
+                self.con.executemany("INSERT OR IGNORE INTO sel VALUES (?,?)", list(kosong))
+                self.con.commit()
+                baru -= kosong
+            if not baru:
+                return 0
         return self._baca(baru, progres, batal)
 
     def _baca(self, baru, progres, batal):
@@ -177,6 +189,7 @@ class IndeksKabel(object):
         # koordinat pertama tiap garis diuji terhadap sel kerja + 1 cincin lagi (>= 110 km dari titik kerja): kabel yang
         # melintasi area kerja tetapi berawal lebih jauh dari itu praktis tidak ada (radius analisis maks. 15 km)
         lebar = None if baru is None else {(cx + dx, cy + dy) for cx, cy in baru for dx in (-1, 0, 1) for dy in (-1, 0, 1)}
+        isi = set()                      # semua sel yang berisi kabel di berkas ini (untuk melewati area kosong nanti)
         try:
             while True:
                 if batal and batal():
@@ -205,7 +218,9 @@ class IndeksKabel(object):
                             y0 = y
                         if y > y1:
                             y1 = y
-                        if lebar is None or _sel(x, y) in lebar:
+                        sel_xy = _sel(x, y)
+                        isi.add(sel_xy)
+                        if lebar is None or sel_xy in lebar:
                             posisi.append(m.start())
                 n_pm += kerja.count(b"</Placemark>")
                 sudah = set()
@@ -249,7 +264,8 @@ class IndeksKabel(object):
         else:
             self.con.executemany("INSERT OR IGNORE INTO sel VALUES (?,?)", list(baru))
         if n_pm and x0 < 1e9:
-            self._set_meta({"ekstent": "%.4f,%.4f,%.4f,%.4f" % (x0, y0, x1, y1), "placemark": n_pm})
+            self._set_meta({"ekstent": "%.4f,%.4f,%.4f,%.4f" % (x0, y0, x1, y1), "placemark": n_pm,
+                            "sel_isi": ";".join("%d:%d" % c for c in sorted(isi))})
         self._set_meta({"detik_terakhir": "%.1f" % (time.time() - t0)})
         self.con.commit()
         return n_ambil

@@ -34,6 +34,23 @@ def jenis_galat(e):
     return "LURING"
 
 
+def baca_ikon(folder_cache, maks=512 * 1024):
+    """Ikon organisasi (opsional): berkas PNG di <folder Tembuku>/ikon atau Documents/Tembuku/ikon. Hanya PNG asli
+    (dicek dari tanda berkas) dan berukuran wajar; tidak ikut di plugin, tetap di komputer pengguna."""
+    out = {}
+    for d in (os.path.join(folder_cache or "", "ikon"), os.path.join(os.path.expanduser("~"), "Documents", "Tembuku", "ikon")):
+        if not os.path.isdir(d):
+            continue
+        for f in sorted(os.listdir(d)):
+            p = os.path.join(d, f)
+            if f.lower().endswith(".png") and f not in out and os.path.isfile(p) and os.path.getsize(p) <= maks:
+                with open(p, "rb") as fh:
+                    isi = fh.read()
+                if isi[:8] == b"\x89PNG\r\n\x1a\n":
+                    out[f] = isi
+    return out
+
+
 def lokasi_istilah(folder_cache):
     """Profil istilah organisasi (opsional, di luar plugin): label & petunjuk khusus perusahaan tidak dikirim bersama
     kode. Urutan: folder profil QGIS -> Dokumen pengguna. Berkas pertama yang ada dipakai."""
@@ -75,6 +92,7 @@ class Sesi(object):
                                                              "built-in labels are used") % self.istilah["_galat"][:160],
                                "istilah.json", T("periksa penulisan JSON di istilah.json",
                                                  "check the JSON in istilah.json"))
+        self.ikon_lokal = baca_ikon(folder_cache)
         mesin.pakai_istilah(self.istilah)
         sumber.pakai_istilah(self.istilah)
 
@@ -123,16 +141,34 @@ class Sesi(object):
         for f in self.target:
             if f["kode"].upper() in sudah_compile:
                 f["sudah_di_compile"] = True
+                from .inti import geo as _geo
+                jauh = min(_geo.haversine(f["ll"], g["ll"]) for c in comps for g in c["fdt"]
+                           if g["kode"].upper() == f["kode"].upper())
+                if jauh > 30:
+                    self.temuan.tambah(V.PERINGATAN, "Koordinat",
+                                       T("FDT %s di berkas Anda berjarak %.0f m dari FDT berkode sama di compile. Tembuku "
+                                         "memakai titik di berkas Anda apa adanya (tidak dipindah)",
+                                         "FDT %s in your file is %.0f m from the FDT with the same code in the "
+                                         "compilation. Tembuku uses the point in your file as it is (not moved)")
+                                       % (f["kode"], jauh), f.get("berkas", ""),
+                                       T("pastikan titik mana yang benar", "check which point is right"))
                 self.temuan.tambah(V.INFO, "Kesesuaian data", T("FDT %s sudah ada di compile desain feeder (sudah punya "
                                                                 "feeder); tetap dianalisis sebagai pembanding",
                                                                 "FDT %s is already in the feeder design compilation (it "
                                                                 "already has a feeder); it is still analysed for "
                                                                 "comparison") % f["kode"])
         # area kerja = sekitar FDT target, compile dan POP: hanya area ini yang diindeks dari KMZ kabel nasional
-        titik = [f["ll"] for f in self.target] + [p["ll"] for p in pops]
+        titik = [f["ll"] for f in self.target]
         for c in comps:
             titik += [f["ll"] for f in c["fdt"]] + [p["ll"] for p in c["pops"]]
             titik += [k["ll"][0] for k in c["kabel"]] + [k["ll"][-1] for k in c["kabel"]]
+        # daftar POP bisa mencakup seluruh negeri: hanya POP dalam ~60 km dari FDT/compile yang ikut menentukan area
+        # kerja, supaya inventaris daerah lain tidak ikut diindeks (bila tidak ada FDT/compile, semua POP dipakai)
+        if titik:
+            sel0 = indeks.sel_dari_titik(titik)
+            titik += [p["ll"] for p in pops if indeks.sel_dari_titik([p["ll"]], 0) & sel0]
+        else:
+            titik = [p["ll"] for p in pops]
         self.sel_kerja = indeks.sel_dari_titik(titik) if titik else None
         ix = []
         nb = len(self.peran.get("NASIONAL", []))
@@ -144,6 +180,8 @@ class Sesi(object):
                 progres=lambda t, pc, base=base: self.progres(t, base + 55.0 / max(nb, 1) * (pc or 0) / 100.0),
                 batal=self._batal))
         self.data = mesin.Data(ix, comps, pops, jalan=self._jalan if (self.pakai_osm or self.jalan_lokal) else None)
+        for p in self.peran.get("AUDIT", []):
+            self.data.audit += sumber.baca_audit(p) or []
         if not self.data.pops:
             self.temuan.tambah(V.PERINGATAN, "Kelengkapan", T("tidak ada titik POP/OLT (dari compile atau KMZ daftar "
                                                               "POP): arah feeder dan pilihan feeder baru tidak bisa dihitung",
@@ -362,12 +400,40 @@ class Sesi(object):
         tgl = datetime.datetime.now().strftime("%Y%m%d_%H%M")
         out = {"kmz": [], "html": None, "semua": None, "temuan": None}
         self.progres("Writing the KMZ files and the report", 96)
+        terpakai = set()
         for h in hasil:
             nm = "TEMBUKU_%s_%s.kmz" % (_aman(h["fdt"]["kode"]), NAMA_BERKAS.get(h["keputusan"], h["keputusan"]))
-            out["kmz"].append(tulis_kmz.tulis([h], os.path.join(folder_keluar, nm), self.prm, nm[:-4]))
+            i = 2
+            while nm.lower() in terpakai:           # kode FDT kembar: jangan menimpa KMZ sebelumnya
+                nm = "TEMBUKU_%s_%s_%d.kmz" % (_aman(h["fdt"]["kode"]), NAMA_BERKAS.get(h["keputusan"], h["keputusan"]), i)
+                i += 1
+            terpakai.add(nm.lower())
+            out["kmz"].append(tulis_kmz.tulis([h], os.path.join(folder_keluar, nm), self.prm, nm[:-4],
+                                             ikon_lokal=self.ikon_lokal))
         if len(hasil) > 1:
             out["semua"] = tulis_kmz.tulis(hasil, os.path.join(folder_keluar, "TEMBUKU_SEMUA_%s.kmz" % tgl), self.prm,
-                                           "Tembuku - semua FDT %s" % tgl)
+                                           "Tembuku - semua FDT %s" % tgl, ikon_lokal=self.ikon_lokal)
+        salah = []
+        for pth in out["kmz"] + ([out["semua"]] if out["semua"] else []):
+            salah += ["%s: %s" % (os.path.basename(pth), m) for m in tulis_kmz.periksa_template(pth)]
+        for h, pth in zip(hasil, out["kmz"]):
+            di_kmz = tulis_kmz.lokasi_fdt(pth).get(tulis_kmz.escape(h["fdt"]["kode"]), [])
+            asal = (float(h["fdt"]["ll"][0]), float(h["fdt"]["ll"][1]))
+            if di_kmz != [asal]:
+                salah.append("%s: lokasi FDT di KMZ tidak sama dengan data masukan" % h["fdt"]["kode"])
+        if salah:
+            self.temuan.tambah(V.PERINGATAN, "Kesesuaian template", T("susunan folder KMZ hasil berbeda dari template "
+                                                                      "Feeder: %s", "the folder layout of the result KMZ "
+                                                                      "differs from the Feeder template: %s")
+                               % "; ".join(salah[:3]), "", T("laporkan ke pembuat Tembuku", "report this to the Tembuku author"))
+        else:
+            self.temuan.tambah(V.INFO, "Kesesuaian template", T("%d KMZ hasil sudah diperiksa ulang: susunan folder Feeder "
+                                                                "lengkap dan urut seperti template, ikon tertanam, lokasi "
+                                                                "FDT sama dengan data masukan",
+                                                                "%d result KMZ files were re-checked: the Feeder folders "
+                                                                "are complete and in template order, icons are embedded, "
+                                                                "and FDT locations equal the input data")
+                               % (len(out["kmz"]) + (1 if out["semua"] else 0)))
         uji = None
         if self.nilai_uji:
             from . import uji_akurasi

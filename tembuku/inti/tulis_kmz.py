@@ -12,13 +12,38 @@ import zipfile
 from . import geo, ikon, mesin, osm
 
 
+CORE = (12, 24, 48, 96, 144, 288)
+
+
 def escape(s):
     """Escape teks XML (pengganti xml.sax.saxutils.escape tanpa impor modul XML yang diblokir pemindai)."""
     return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
-CORE = (12, 24, 48, 96, 144, 288)
-WARNA_CORE = {12: "ffff80ff", 24: "ff0080ff", 48: "ff0055aa", 96: "ff00ffff", 144: "ffff0000", 288: "ffffffff"}
+# Warna kabel = style Template APD KMZ FTTH Feeder (KML aabbggrr), dicocokkan dengan compile nyata:
+# 12C ff55ff, 24C ffaa00, 48C aa5500, 96C ffff00 (RGB); 144C memakai nilai KML 'ffff0000' seperti di template dan
+# compile; 288C tidak punya warna eksplisit di template (tampil putih bawaan) - tidak dibuat warna baru.
+WARNA_CORE = {12: "ffff55ff", 24: "ff00aaff", 48: "ff0055aa", 96: "ff00ffff", 144: "ffff0000", 288: "ffffffff"}
+LEBAR_KABEL = 3
+# Susunan folder Feeder persis template (nama & urutan); dipakai penulis dan pemeriksa hasil.
+TEMPLATE_FEEDER = (
+    "Cable", "Cable/New Cable Aerial/Udara") + tuple("Cable/New Cable Aerial/Udara/New Cable %dC" % c for c in CORE) + (
+    "Cable/Collo Cable", "Cable/UG Utilities", "Cable/UG Utilities/Manhole", "Cable/UG Utilities/Handhole",
+    "Tiang 6 Meter", "Tiang 6 Meter/New Tiang 6 Meter", "Tiang 6 Meter/Eksisting Tiang 6 Meter",
+    "Tiang 7 Meter", "Tiang 7 Meter/New Tiang 7 Meter", "Tiang 7 Meter/Eksisting Tiang 7 Meter",
+    "Tiang 9 Meter", "Tiang 9 Meter/New Tiang 9 Meter", "Tiang 9 Meter/Eksisting Tiang 9 Meter",
+    "Hanger", "Hanger/New Hanger", "Hanger/Eksisting Hanger",
+    "Closure", "Closure/New Closure") + tuple("Closure/New Closure/New Closure %d" % c for c in CORE) + (
+    "Closure/Eksisting Closure", "OTB", "OTB/New OTB") + tuple("OTB/New OTB/New OTB %d" % c for c in CORE) + (
+    "OTB/Eksisting OTB", "FDT", "FDT/Eksisting FDT", "FDT/New FDT", "OLT", "Keterangan Infra",
+    "Keterangan Infra/New Cable Galian") + tuple("Keterangan Infra/New Cable Galian/New Cable %dC UG" % c for c in CORE) + (
+    "Keterangan Infra/Collo Tiang",) + tuple("Keterangan Infra/Collo Tiang/Colo Pole %dC" % c for c in CORE)
+# Ikon organisasi (opsional, dari folder 'ikon' milik pengguna; tidak ikut di plugin): nama berkas template -> skala.
+IKON_LOKAL = {"fdt": (("FDT ioh.png", "FDT IOH.png", "FDT.png"), 0.5), "pop": (("OLT.png",), 1.2),
+              "closure": (("Closure 96.png", "Closure 48.png"), 0.8), "closure_kecil": (("Closure 48.png",), 0.8),
+              "closure_288": (("CL_288.png",), 0.8), "otb": (("OTB_144.png", "OTB.png"), 0.8),
+              "slack": (("Spare Cable.png",), 0.8)}
+SKALA = {"fdt": 0.5, "pop": 1.2, "closure": 0.8, "otb": 0.8, "slack": 0.8, "tap": 1.1}
 WARNA_INFRA = {"TIANG_NASIONAL": "b3ffff00", "TIANG_COMPILE": "b3ffaa55", "NEW_INFRA": "b300ff55",
                "GARIS_BANTU": "ff0000ff", "COLO_CABLE": "b37fffff"}
 IKON = {k: "files/%s.png" % k for k in ikon.BENTUK}
@@ -30,9 +55,23 @@ def _c(ll):
     return " ".join("%.7f,%.7f,0" % (p[0], p[1]) for p in ll)
 
 
+def _c_persis(p):
+    """Koordinat titik apa adanya (presisi penuh): lokasi FDT/POP dari data tidak digeser sedikit pun."""
+    return "%s,%s,0" % (repr(float(p[0])), repr(float(p[1])))
+
+
 class _W(object):
     def __init__(self):
         self.o = []
+        self.lokal = {}          # jenis ikon -> id style ikon organisasi (bila pengguna menyediakannya)
+
+    def ik(self, jenis, core=None):
+        """Style ikon: ikon organisasi bila ada (closure mengikuti kapasitas seperti template), selain itu bawaan."""
+        if jenis == "closure" and core:
+            j = "closure_288" if core >= 288 else ("closure_kecil" if core <= 48 else "closure")
+            if j in self.lokal:
+                return self.lokal[j]
+        return self.lokal.get(jenis, "ikon_" + jenis)
 
     def a(self, s):
         self.o.append(s)
@@ -47,27 +86,35 @@ class _W(object):
                "<coordinates>%s</coordinates></LineString></Placemark>"
                % (escape(nama), "<description>%s</description>" % escape(desc) if desc else "", style, _c(ll)))
 
-    def titik(self, nama, p, style, desc="", data=None):
+    def titik(self, nama, p, style, desc="", data=None, persis=False):
         ed = ""
         if data:
             ed = "<ExtendedData>%s</ExtendedData>" % "".join(
                 '<Data name="%s"><value>%s</value></Data>' % (escape(str(k)), escape(str(v))) for k, v in data.items())
         self.a("<Placemark><name>%s</name>%s<styleUrl>#%s</styleUrl>%s<Point><coordinates>%s</coordinates></Point>"
                "</Placemark>" % (escape(nama), "<description>%s</description>" % escape(desc) if desc else "", style, ed,
-                                 _c([p])))
+                                 _c_persis(p) if persis else _c([p])))
 
 
-def _styles(w):
+def _styles(w, lokal=None):
+    lokal = lokal or {}
     for c, col in WARNA_CORE.items():
-        w.a('<Style id="kabel%d"><LineStyle><color>%s</color><width>4</width></LineStyle></Style>' % (c, col))
+        w.a('<Style id="kabel%d"><LineStyle><color>%s</color><width>%d</width></LineStyle></Style>'
+            % (c, col, LEBAR_KABEL))
     for nm, col in WARNA_INFRA.items():
         w.a('<Style id="infra_%s"><LineStyle><color>%s</color><width>%d</width></LineStyle></Style>'
             % (nm, col, 3 if nm == "GARIS_BANTU" else 10))
     w.a('<Style id="kandidat"><LineStyle><color>9900a5ff</color><width>6</width></LineStyle></Style>')
     w.a('<Style id="kandidat_tolak"><LineStyle><color>66888888</color><width>3</width></LineStyle></Style>')
     for k, href in IKON.items():
-        w.a('<Style id="ikon_%s"><IconStyle><color>%s</color><scale>1.1</scale><Icon><href>%s</href></Icon>'
-            '</IconStyle><LabelStyle><scale>0.8</scale></LabelStyle></Style>' % (k, WARNA_IKON[k], href))
+        w.a('<Style id="ikon_%s"><IconStyle><color>%s</color><scale>%s</scale><Icon><href>%s</href></Icon>'
+            '</IconStyle><LabelStyle><scale>0.8</scale></LabelStyle></Style>' % (k, WARNA_IKON[k], SKALA[k], href))
+    for k, (nama, skala) in IKON_LOKAL.items():       # ikon organisasi: tanpa pewarnaan, skala template
+        nm = next((n for n in nama if n in lokal), None)
+        if nm:
+            w.a('<Style id="lokal_%s"><IconStyle><scale>%s</scale><Icon><href>files/%s</href></Icon></IconStyle>'
+                '<LabelStyle><scale>0.8</scale></LabelStyle></Style>' % (k, skala, escape(nm)))
+            w.lokal[k] = "lokal_" + k
 
 
 def _core_bulat(c):
@@ -134,8 +181,8 @@ def _isi_traksi(w, h, prm, ke_ll):
     def hanger():
         def nh():
             if tap_ll:
-                w.titik("Slack", tap_ll, "ikon_slack", "Slack %d m di titik sambung (tap)" % prm["slack_m"])
-            w.titik("Slack", f["ll"], "ikon_slack", "Slack %d m di FDT" % prm["slack_m"])
+                w.titik("Slack", tap_ll, w.ik("slack"), "Slack %d m di titik sambung (tap)" % prm["slack_m"])
+            w.titik("Slack", f["ll"], w.ik("slack"), "Slack %d m di FDT" % prm["slack_m"])
         w.folder("New Hanger", nh)
         w.folder("Eksisting Hanger", lambda: None)
     w.folder("Hanger", hanger)
@@ -145,9 +192,9 @@ def _isi_traksi(w, h, prm, ke_ll):
             for c in CORE:
                 def isi(c=c):
                     if tap_ll and str(c) == str(prm["closure_tap"]):
-                        w.titik("Closure %d" % c, tap_ll, "ikon_closure", "Closure baru di titik sambung (tap)")
+                        w.titik("Closure %d" % c, tap_ll, w.ik("closure", c), "Closure baru di titik sambung (tap)")
                     if baru and c == 144 and kab_baru.get(144):
-                        w.titik("Closure 144", kab_baru[144][0][-1], "ikon_closure", "Slack 144: pastikan tidak berimpit "
+                        w.titik("Closure 144", kab_baru[144][0][-1], w.ik("closure", 144), "Slack 144: pastikan tidak berimpit "
                                 "dengan slack feeder lain")
                 w.folder("New Closure %d" % c, isi)
         w.folder("New Closure", nc)
@@ -157,7 +204,7 @@ def _isi_traksi(w, h, prm, ke_ll):
     def otb():
         def no():
             for c in CORE:
-                w.folder("New OTB %d" % c, lambda c=c: (w.titik("OTB %d" % c, pop["ll"], "ikon_otb", "OTB di POP")
+                w.folder("New OTB %d" % c, lambda c=c: (w.titik("OTB %d" % c, pop["ll"], w.ik("otb"), "OTB di POP")
                                                         if baru and pop and c == 144 else None))
         w.folder("New OTB", no)
         w.folder("Eksisting OTB", lambda: None)
@@ -166,13 +213,13 @@ def _isi_traksi(w, h, prm, ke_ll):
     def fdt():
         data = {"FDT FAT CODE": f["kode"], "PREMISES": int(f["premises"]) if f.get("premises") else "-",
                 "SPLITTERS": ("%dx1x%d" % (f["splitter"], f.get("rasio") or 4)) if f.get("splitter") else "-",
-                "LAT": "%.7f" % f["ll"][1], "LONG": "%.7f" % f["ll"][0]}
-        w.folder("Eksisting FDT", lambda: (w.titik(f["kode"], f["ll"], "ikon_fdt", "", data)
+                "LAT": repr(float(f["ll"][1])), "LONG": repr(float(f["ll"][0]))}
+        w.folder("Eksisting FDT", lambda: (w.titik(f["kode"], f["ll"], w.ik("fdt"), "", data, persis=True)
                                            if f.get("status") == "Eksisting" else None))
-        w.folder("New FDT", lambda: (w.titik(f["kode"], f["ll"], "ikon_fdt", "", data)
+        w.folder("New FDT", lambda: (w.titik(f["kode"], f["ll"], w.ik("fdt"), "", data, persis=True)
                                      if f.get("status") != "Eksisting" else None))
     w.folder("FDT", fdt)
-    w.folder("OLT", lambda: w.titik(pop["nama"], pop["ll"], "ikon_pop", "", pop.get("attrs") or None) if pop else None)
+    w.folder("OLT", lambda: w.titik(pop["nama"], pop["ll"], w.ik("pop"), "", pop.get("attrs") or None) if pop else None)
 
     def ket():
         w.folder("New Cable Galian", lambda: [w.folder("New Cable %dC UG" % c, lambda: None) for c in CORE])
@@ -209,14 +256,65 @@ def _analisis_folder(w, h, ke_ll, bantu):
     w.folder("TEMBUKU - analisis %s (%s)" % (h["fdt"]["kode"], mesin.nama_keputusan(h["keputusan"])), isi)
 
 
-def tulis(hasil, path, prm, judul=None):
-    """Tulis satu KMZ berisi satu atau banyak hasil analisis FDT."""
+def periksa_template(path):
+    """Buka kembali KMZ hasil dan cocokkan tiap folder traksi dengan susunan template Feeder (nama + urutan).
+    -> daftar masalah (kosong = sesuai). Folder tambahan yang diizinkan: 'New Infra' di Keterangan Infra."""
+    import re
+    with zipfile.ZipFile(path) as zf:
+        kml = zf.read("doc.kml").decode("utf-8")
+        berkas = set(zf.namelist())
+    masalah, jalur, traksi, kini = [], [], {}, None
+    for m in re.finditer(r"<Folder><name>([^<]*)</name>|</Folder>", kml):
+        if m.group(1) is None:
+            jalur.pop()
+            continue
+        jalur.append(m.group(1).replace("&amp;", "&"))
+        if "Feeder" in jalur[3:4] and len(jalur) > 4:
+            traksi[kini].append("/".join(jalur[4:]))
+        elif len(jalur) == 4 and jalur[3] == "Feeder":
+            kini = "%s #%d" % (jalur[2], len(traksi) + 1)        # nama traksi bisa kembar: tiap kemunculan diperiksa
+            traksi[kini] = []
+    if not traksi:
+        masalah.append("tidak ada folder Feeder di dalam folder traksi")
+    for t, ada in traksi.items():
+        inti = [x for x in ada if x != "Keterangan Infra/New Infra"]
+        if tuple(inti) != TEMPLATE_FEEDER:
+            kurang = [x for x in TEMPLATE_FEEDER if x not in inti]
+            lebih = [x for x in inti if x not in TEMPLATE_FEEDER]
+            masalah.append("%s: %s" % (t, "; ".join(filter(None, [
+                "folder hilang: " + ", ".join(kurang[:4]) if kurang else "",
+                "folder di luar template: " + ", ".join(lebih[:4]) if lebih else "",
+                "urutan folder berbeda dari template" if not kurang and not lebih else ""]))))
+    if re.search(r"<Folder><name>Distribution", kml, re.I):
+        masalah.append("ada folder Distribution")
+    for href in set(re.findall(r"<href>(files/[^<]+)</href>", kml)):
+        if href.replace("&amp;", "&") not in berkas:
+            masalah.append("ikon tidak tertanam: " + href)
+    return masalah
+
+
+def lokasi_fdt(path):
+    """Baca kembali lokasi titik FDT di KMZ hasil -> {kode: (lon, lat)} (untuk membuktikan FDT tidak bergeser)."""
+    import re
+    with zipfile.ZipFile(path) as zf:
+        kml = zf.read("doc.kml").decode("utf-8")
+    out = {}
+    for m in re.finditer(r"<Folder><name>(?:New|Eksisting) FDT</name>(.*?)</Folder>", kml, re.S):
+        for n, c in re.findall(r"<Placemark><name>([^<]*)</name>.*?<Point><coordinates>([^<]*)</coordinates>", m.group(1), re.S):
+            x, y = c.split(",")[:2]
+            out.setdefault(n, []).append((float(x), float(y)))
+    return out
+
+
+def tulis(hasil, path, prm, judul=None, ikon_lokal=None):
+    """Tulis satu KMZ berisi satu atau banyak hasil analisis FDT. ikon_lokal: {nama berkas: bytes} ikon organisasi."""
     w = _W()
+    ikon_lokal = ikon_lokal or {}
     w.a('<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">'
         '<Document><name>%s</name><description>%s</description>' % (
             escape(judul or os.path.basename(path)),
             escape("Dibuat oleh Tembuku (Feeder Tap Designer). Usulan desain - wajib ditinjau desainer. " + osm.ATRIBUSI)))
-    _styles(w)
+    _styles(w, ikon_lokal)
     kelompok = {}
     for h in hasil:
         n = h["penomoran"]
@@ -230,7 +328,7 @@ def tulis(hasil, path, prm, judul=None):
                         bantu = []
 
                         def tr(h=h, L=L):
-                            bantu.extend(_isi_traksi(w, h, prm, L.balik))
+                            w.folder("Feeder", lambda: bantu.extend(_isi_traksi(w, h, prm, L.balik)))
                         w.folder(nama_traksi(h, prm), tr)
                         _analisis_folder(w, h, L.balik, bantu)
                 w.folder("Feeder %d" % fn, fdr_isi)
@@ -242,5 +340,11 @@ def tulis(hasil, path, prm, judul=None):
         zf.writestr("doc.kml", data)
         for nama, isi in ikon.semua().items():
             zf.writestr(nama, isi)
+        dipakai = set(v[6:] for v in w.lokal.values())
+        for jenis, (nama, _s) in IKON_LOKAL.items():
+            if jenis in dipakai:
+                nm = next(n for n in nama if n in ikon_lokal)
+                if "files/" + nm not in zf.namelist():
+                    zf.writestr("files/" + nm, ikon_lokal[nm])
     os.replace(tmp, path)
     return path

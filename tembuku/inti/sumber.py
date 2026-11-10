@@ -21,7 +21,8 @@ from .teks import T, gabung
 
 NAMA_PERAN = {"NASIONAL": T("inventaris kabel", "cable inventory"),
               "COMPILE": T("compile desain feeder", "feeder design compilation"),
-              "TARGET": T("titik FDT", "FDT points"), "POP": T("daftar POP", "POP list"), "LAIN": T("lainnya", "other")}
+              "TARGET": T("titik FDT", "FDT points"), "POP": T("daftar POP", "POP list"),
+              "AUDIT": T("catatan tube feeder", "feeder tube record"), "LAIN": T("lainnya", "other")}
 
 RX_POPF = re.compile(r"\bPOP\s*\d*\b", re.I)
 RX_SITE = re.compile(r"(^|_|\s)site[_\s]?id$", re.I)     # atribut ID lokasi (umum di KMZ POP/OLT)
@@ -59,6 +60,8 @@ def _tanda_fdt(pm):
     up = nm.upper()
     if atribut.RX_KATA_AKSESORI.search(up) and not atribut.RX_KATA_FDT.search(up):
         return False
+    if _turunan_fdt(nm):
+        return False
     folder = " / ".join(pm["path"][-2:]).upper()
     return bool(_seperti_fdt(nm) or atribut.RX_KATA_FDT.search(up) or atribut.ada(pm["attrs"], "kode_fdt") or
                 atribut.ada(pm["attrs"], "splitter") or (atribut.RX_KATA_FDT.search(folder) and
@@ -68,6 +71,15 @@ RX_FDT_LONGGAR = re.compile(r"^[A-Za-z]{2,4}\d[\s_\-.]*[A-Za-z]{2,4}\d{1,2}[\s_\
 RX_CLUSTER = re.compile(r"(\d{9,12})_APD\s+(?:Distribusi|Feeder|Distribution)\s+KMZ_(.+?)(?:_\d{2}-\d{2}-\d{4}.*)?"
                         r"(?:\.kmz)?$", re.I)
 RX_TGL = re.compile(r"_(\d{2}-\d{2}-\d{4})")
+
+
+RX_TURUNAN_FDT = re.compile(r"^[A-Za-z]{2,4}\d?[\s_\-.]*[A-Za-z]{2,4}\d{1,3}[\s_\-.]*[Hh]\d{1,3}[\s_\-./]+\S")
+
+
+def _turunan_fdt(nama):
+    """Nama yang DIAWALI kode FDT lalu masih bersambung (mis. 'GSK1-CUL01-H03-D01-01'): itu kabel/FAT/titik distribusi
+    milik FDT tersebut, BUKAN titik FDT-nya. Tidak pernah dipakai sebagai lokasi FDT."""
+    return bool(RX_TURUNAN_FDT.match((nama or "").strip()))
 
 
 def _seperti_fdt(nama):
@@ -268,6 +280,12 @@ def _unit_struktur(path):
     return out
 
 
+RX_NET_CABLE = re.compile(r"^NET[\s._]*CABLES?$")
+RX_KET_INFRA = re.compile(r"^KET(ERANGAN)?[\s._]*INFRA$")
+RX_NAMA_COLO = re.compile(r"^\s*COLL?O\s*CAB(LE|EL)\b")
+RX_CORE_NAMA = re.compile(r"^\s*(\d{2,3})\s*[FCDfcd]\b")
+
+
 def _jenis_kabel_umum(pth, nama):
     """Jenis garis di compile non-template dari kata kunci folder dan nama (Indonesia/Inggris)."""
     teks = (" / ".join(pth) + " / " + (nama or "")).upper()
@@ -340,8 +358,9 @@ def baca_compile(path, temuan=None):
         t = traksi.setdefault(key, {"kode": induk, "info": t0, "pop_folder": popf, "feeder": fdr, "berkas": base,
                                     "fdt": [], "kabel": [], "colo": [], "closure": [], "lain": []})
         sub = j != j0
-        if g0 == "Point" and (any("FDT" in f.upper() for f in p[j + 1:]) or _seperti_fdt(pm["name"]) or
-                              (t0.get("struktur") and _tanda_fdt(pm))):
+        if g0 == "Point" and not _turunan_fdt(pm["name"]) and (
+                any("FDT" in f.upper() for f in p[j + 1:]) or _seperti_fdt(pm["name"]) or
+                (t0.get("struktur") and _tanda_fdt(pm))):
             rec = _fdt_rec(pm, cs[0], temuan, base)
             rec.update({"traksi": induk, "feeder": fdr, "pop_folder": popf, "colo_saudara": sub,
                         "status": "Eksisting" if "Eksisting FDT" in p else "New"})
@@ -354,9 +373,17 @@ def baca_compile(path, temuan=None):
                      and "AERIAL" not in up else "UG" if up.endswith(" UG") else "INFRA")
             if t0.get("struktur"):
                 jenis = _jenis_kabel_umum(pm["path"][j0 + 1:], pm["name"])
+            lama = None
+            if RX_NET_CABLE.match(up):            # susunan lama: Net_Cables = kabel baru, bernama '<core>F <panjang>'
+                jenis = "NEW_CABLE"
+                lama = RX_CORE_NAMA.match(pm["name"] or "")
+            elif RX_KET_INFRA.match(up) and RX_NAMA_COLO.match((pm["name"] or "").upper()):
+                jenis = "COLO_CABLE"              # susunan lama: garis 'Colo Cable' disimpan di Ket.Infra
             core = None
-            if jenis == "NEW_CABLE":
-                core = V.koreksi_core(leaf, temuan, base, " (folder %s)" % leaf)
+            if lama and int(lama.group(1)) in (12, 24, 48, 72, 96, 144, 192, 288):
+                core = int(lama.group(1))
+            elif jenis == "NEW_CABLE":
+                core = V.koreksi_core(leaf, temuan if not RX_NET_CABLE.match(up) else None, base, " (folder %s)" % leaf)
                 if core is None:
                     core = V.koreksi_core(pm["name"], None)
             else:
@@ -423,11 +450,19 @@ def baca_target(path, temuan=None):
     temuan = temuan if temuan is not None else V.Temuan()
     out = {}
     base = os.path.basename(path)
-    for pm in baca.placemarks(path):
+    semua = [pm for pm in baca.placemarks(path) if pm["geoms"][0][0] == "Point"]
+    # Titik yang NAMANYA persis kode FDT adalah lokasi FDT yang sah. Bila berkas memilikinya, titik lain yang hanya
+    # 'mirip' (lewat folder/atribut) tidak boleh menggantikan atau menggeser lokasinya.
+    ada_persis = any(_seperti_fdt(pm["name"].strip()) for pm in semua)
+    turunan = 0
+    for pm in semua:
         g0, cs = pm["geoms"][0]
-        if g0 != "Point":
-            continue
         nm = pm["name"].strip()
+        if _turunan_fdt(nm):
+            turunan += 1
+            continue
+        if ada_persis and not _seperti_fdt(nm):
+            continue
         p = [V.kanon_folder(f, None) for f in pm["path"]]
         di_fdt = any("FDT" in f.upper() for f in p[-2:])
         if not (_seperti_fdt(nm) or di_fdt or _tanda_fdt(pm)) or _tanda_pop_luas(pm):
@@ -449,7 +484,12 @@ def baca_target(path, temuan=None):
                 clus, area = m.group(1), m.group(2).strip()
                 mt = RX_TGL.search(f)
                 tgl = mt.group(1) if mt else None
-        rec.update({"cluster": clus, "area": area, "tanggal": tgl, "berkas": base,
+        if not clus:                       # nama berkas '<ID cluster>_<nama area>.kmz' (tanpa kata APD)
+            m = re.match(r"^(\d{9,12})_(.+?)(?:_\d{2}-\d{2}-\d{4})?\.[A-Za-z]{3,7}$", base)
+            if m:
+                clus, area = m.group(1), m.group(2).strip()
+        rec.update({"_lat": atribut.nilai(pm["attrs"], "lat"), "_lon": atribut.nilai(pm["attrs"], "lon"),
+                    "cluster": clus, "area": area, "tanggal": tgl, "berkas": base,
                     "status": "Eksisting" if "Eksisting FDT" in p else "New"})
         lama = out.get(rec["kode"].upper())
         if lama is None:
@@ -464,6 +504,25 @@ def baca_target(path, temuan=None):
                                                           "remove the duplicate or fix its code"))
             if rec.get("splitter") and not lama.get("splitter"):
                 lama["splitter"], lama["rasio"] = rec["splitter"], rec["rasio"]
+    for rec in out.values():
+        # lokasi FDT = titik di berkas, apa adanya. Kolom LAT/LONG yang berbeda hanya dilaporkan, tidak dipakai.
+        la, lo = atribut.angka(rec.pop("_lat", None)), atribut.angka(rec.pop("_lon", None))
+        if la is not None and lo is not None and abs(la) <= 90 and abs(lo) <= 180:
+            from . import geo
+            d = geo.haversine(rec["ll"], (lo, la))
+            if d > 30:
+                temuan.tambah(V.PERINGATAN, "Koordinat",
+                              T("FDT %s: kolom LAT/LONG di datanya menunjuk tempat lain (%.0f m dari titiknya). Tembuku "
+                                "memakai titik di peta dan tidak memindahkannya",
+                                "FDT %s: its LAT/LONG fields point somewhere else (%.0f m from the point). Tembuku uses "
+                                "the point on the map and does not move it") % (rec["kode"], d), base,
+                              T("pastikan titik FDT sudah di tempat yang benar", "make sure the FDT point is in the "
+                                                                              "right place"))
+    if turunan and out:
+        temuan.tambah(V.INFO, "Isi data", T("%d titik bernama kode FDT + lanjutan (mis. -D01-01) adalah bagian distribusi, "
+                                            "bukan FDT, jadi tidak dipakai sebagai lokasi FDT",
+                                            "%d points named FDT code + suffix (e.g. -D01-01) belong to distribution, "
+                                            "not the FDT, so they are not used as the FDT location") % turunan, base)
     if not out:
         temuan.tambah(V.PERINGATAN, "Kelengkapan", T("tidak ada titik FDT di berkas ini", "no FDT point in this file"),
                       base)
@@ -495,6 +554,35 @@ def baca_pop(path, temuan=None, hanya_bertanda=False):
     return bertanda or ([] if hanya_bertanda else semua)
 
 
+def baca_audit(path):
+    """Tabel catatan tube per feeder (Excel/CSV dengan kolom 'Feeder' dan 'Tube Terpakai', opsional 'POP').
+    -> [(nama POP, nomor feeder, {nomor T terpakai})] atau None bila bukan tabel semacam itu."""
+    j = baca.jenis(path)
+    try:
+        baris = baca._baris_xlsx(path) if j == "XLSX" else (baca._baris_csv(path) if j in ("CSV", "TABEL") else None)
+    except Exception:           # tabel rusak/terkunci: bukan catatan tube
+        return None
+    baris = list(baris) if baris is not None else []
+    if not baris:
+        return None
+    kop = [atribut.norm(x) for x in baris[0]]
+    i_f = next((i for i, k in enumerate(kop) if k in ("FEEDER", "NOFEEDER", "NOMORFEEDER")), None)
+    i_t = next((i for i, k in enumerate(kop) if k in ("TUBETERPAKAI", "TUBEUSED", "USEDTUBE", "USEDTUBES", "TUBEDIPAKAI")), None)
+    i_p = next((i for i, k in enumerate(kop) if k in ("POP", "NAMAPOP", "POPNAME", "OLT")), None)
+    if i_f is None or i_t is None:
+        return None
+    out = []
+    for r in baris[1:]:
+        if len(r) <= max(i_f, i_t):
+            continue
+        m = re.search(r"\d+", str(r[i_f]))
+        if not m:
+            continue
+        out.append((str(r[i_p]).strip() if i_p is not None and len(r) > i_p else "", int(m.group(0)),
+                    V.nomor_tube(str(r[i_t]))))
+    return out or None
+
+
 def _relevan(p):
     """Berkas yang mungkin berisi data peta Tembuku (dikenali dari isi). Tabel tanpa kolom koordinat = tidak relevan."""
     j = baca.jenis(p)
@@ -512,7 +600,7 @@ def kumpulkan(paths, temuan=None, bukti=None, folder_kerja=None):
     bukti (dict, opsional) diisi alasan pengenalan per berkas; ZIP berisi banyak berkas dibuka satu per satu."""
     temuan = temuan if temuan is not None else V.Temuan()
     bukti = bukti if bukti is not None else {}
-    peran = {"NASIONAL": [], "COMPILE": [], "TARGET": [], "POP": [], "LAIN": []}
+    peran = {"NASIONAL": [], "COMPILE": [], "TARGET": [], "POP": [], "AUDIT": [], "LAIN": []}
     daftar = []
     for p in paths:
         if os.path.isfile(p) and baca.jenis(p) == "ZIP":
@@ -529,6 +617,12 @@ def kumpulkan(paths, temuan=None, bukti=None, folder_kerja=None):
         else:
             daftar.append(p)
     for p in V.pra_cek_berkas(daftar, temuan):
+        audit = baca_audit(p) if baca.jenis(p) in ("XLSX", "CSV", "TABEL") else None
+        if audit:
+            peran["AUDIT"].append(p)
+            bukti[p] = T("tabel dengan kolom Feeder dan Tube Terpakai (%d feeder)",
+                         "table with Feeder and Used Tube columns (%d feeders)") % len(audit)
+            continue
         if not _relevan(p):
             temuan.tambah(V.PERINGATAN, "Kelengkapan", T("bukan data peta yang dikenali (KMZ, KML, GeoJSON, CSV/Excel "
                                                          "berkoordinat, Shapefile, GeoPackage), dilewati",
@@ -584,7 +678,7 @@ def cari_berkas(folder, rekursif=True):
             if low.endswith(baca.EKST_OGR) and ogr is None:
                 continue
             if low.endswith(baca.EKST_DATA) or (not low.endswith(lewati) and baca.jenis(p) in ("KMZ", "KML", "GEOJSON")):
-                if _relevan(p):
+                if _relevan(p) or (baca.jenis(p) in ("XLSX", "CSV") and baca_audit(p)):
                     out.append(p)
         if not rekursif:
             break

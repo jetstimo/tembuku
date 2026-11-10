@@ -65,6 +65,19 @@ lines with fibre counts and spare-fibre data are a cable inventory; folders that
 POP/OLT/STO points are POP locations. The <i>Why</i> column in the window and the section "Berkas yang dibaca dan
 alasannya" in the report say what was found in each file. If a file was recognised wrongly, change it in the
 <i>Read as</i> column.</p>
+<p><b>The FDT is never moved.</b> Tembuku uses the FDT point exactly as it is in your file. A point whose name is an
+FDT code followed by more text (for example <code>GSK1-CUL01-H03-D01-01</code>) belongs to distribution and is never
+used as the FDT. If the LAT/LONG fields, or the same FDT in the compilation, point somewhere else, Tembuku tells you in
+the input check and still keeps your point. Every result KMZ is opened again to confirm this.</p>
+<p><b>Feeder tube record (optional).</b> An Excel or CSV table with the columns <i>Feeder</i> and <i>Tube Terpakai</i>
+(and optionally <i>POP</i>) in the same folder is read together with the compilation, so the next T number takes the
+recorded tubes into account. T numbers never go past 12; when an unrecorded number is proposed, or all 12 are recorded,
+the result says so and asks you to verify.</p>
+<p><b>Template and icons.</b> Each result KMZ holds the complete Feeder folder set of the APD Feeder template, in the
+template order, with the template cable colours and line width; this is checked after writing. To use your
+organisation's icons, put the PNG files (for example <code>FDT ioh.png</code>, <code>Closure 48.png</code>,
+<code>Closure 96.png</code>, <code>OLT.png</code>) in the folder <code>ikon</code> next to <code>istilah.json</code>
+(QGIS profile folder &gt; tembuku) or in <code>Documents/Tembuku/ikon</code>. They stay on your computer.</p>
 <p>Formats read: KMZ and KML (also when the extension is wrong), ZIP files holding several of these, GeoJSON, CSV or TXT with
 coordinate columns (lat/lon in any common spelling, one "lat, lon" column, or WKT; decimal comma is fine), Excel
 (.xlsx), and through QGIS also Shapefile, GeoPackage, GML, MapInfo TAB, FlatGeobuf and GPX. Column names in

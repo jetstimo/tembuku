@@ -37,6 +37,8 @@ SINONIM = {
                  "PELANGGAN", "CUSTOMER", "CUSTOMERS", "SUBSCRIBERS", "PORT"],
     "kode_fdt": ["FDTFATCODE", "FDTCODE", "KODEFDT", "FDTID", "IDFDT", "FDTNAME", "NAMAFDT", "FDT", "ODCCODE",
                  "KODEODC", "ODCID", "ODCNAME", "NAMAODC", "ODC"],
+    "lat": ["LAT", "LATITUDE", "LINTANG"],
+    "lon": ["LONG", "LON", "LNG", "LONGITUDE", "BUJUR"],
     "pop": ["SITEID", "SITE", "OLT", "OLTNAME", "NAMAOLT", "OLTID", "HOSTNAME", "STO", "NAMASTO", "KODESTO",
             "POP", "POPNAME", "NAMAPOP", "POPID", "NENAME", "CENTRALOFFICE", "CO"],
 }
