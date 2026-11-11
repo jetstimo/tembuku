@@ -75,9 +75,18 @@ recorded tubes into account. T numbers never go past 12; when an unrecorded numb
 the result says so and asks you to verify.</p>
 <p><b>Template and icons.</b> Each result KMZ holds the complete Feeder folder set of the APD Feeder template, in the
 template order, with the template cable colours and line width; this is checked after writing. To use your
-organisation's icons, put the PNG files (for example <code>FDT ioh.png</code>, <code>Closure 48.png</code>,
-<code>Closure 96.png</code>, <code>OLT.png</code>) in the folder <code>ikon</code> next to <code>istilah.json</code>
-(QGIS profile folder &gt; tembuku) or in <code>Documents/Tembuku/ikon</code>. They stay on your computer.</p>
+own icons, put PNG files whose names start with what they show (<code>FDT</code>, <code>Closure 48</code>,
+<code>Closure 96</code>, <code>Closure 288</code>, <code>OTB</code>, <code>OLT</code>, <code>Spare</code> or
+<code>Slack</code>) in the folder <code>ikon</code> next to <code>istilah.json</code> (QGIS profile folder &gt; tembuku)
+or in <code>Documents/Tembuku/ikon</code>. They stay on your computer and are stored in the KMZ under neutral names.
+Lines in the Colo Pole folders take the colour of their cable size, as in the template.</p>
+<p><b>File names.</b> The design KMZ is named like the feeder design files used in the compilation:
+<code>&lt;cluster ID&gt;_APD Feeder KMZ_&lt;area&gt;_&lt;date&gt;.kmz</code>. When the cluster ID or area is not in your
+data, the FDT code is used instead (<code>TEMBUKU_&lt;FDT&gt;_&lt;decision&gt;.kmz</code>). The summary CSV lists which
+file belongs to which FDT.</p>
+<p><b>Two KMZ files per FDT.</b> The design KMZ holds only the template folders, so a bill-of-materials tool reads
+nothing extra. The file ending in <code>_ANALISIS</code> holds the review material: the candidates compared, their tap
+points, helper lines to redraw, and stretches that need new poles or a new route.</p>
 <p>Formats read: KMZ and KML (also when the extension is wrong), ZIP files holding several of these, GeoJSON, CSV or TXT with
 coordinate columns (lat/lon in any common spelling, one "lat, lon" column, or WKT; decimal comma is fine), Excel
 (.xlsx), and through QGIS also Shapefile, GeoPackage, GML, MapInfo TAB, FlatGeobuf and GPX. Column names in

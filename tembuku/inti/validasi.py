@@ -117,7 +117,20 @@ def kanon_folder(nama, temuan=None, berkas=""):
     return hasil or nama
 
 
+_INGAT_MIRIP = {}
+
+
 def _mirip_unik(teks, kandidat, cutoff=0.8, selisih=0.05):
+    """Hasil diingat: nama folder yang sama berulang ratusan kali dalam satu compile."""
+    kunci = (teks, tuple(kandidat), cutoff, selisih)
+    if kunci not in _INGAT_MIRIP:
+        if len(_INGAT_MIRIP) > 5000:
+            _INGAT_MIRIP.clear()
+        _INGAT_MIRIP[kunci] = _mirip_unik_hitung(teks, kandidat, cutoff, selisih)
+    return _INGAT_MIRIP[kunci]
+
+
+def _mirip_unik_hitung(teks, kandidat, cutoff=0.8, selisih=0.05):
     """Kandidat termirip HANYA bila skornya >= cutoff DAN unggul jelas atas kandidat kedua (bukan seri).
     Hanya untuk teks tanpa angka: nilai berangka (kode FDT, ukuran kabel, splitter) tidak pernah ditebak secara fuzzy,
     karena 'FDT-01' vs 'FDT-07' atau '1:6' vs '1:16' bermiripan tinggi padahal beda makna (difflib ratio 0,83-0,86)."""

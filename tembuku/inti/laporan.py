@@ -41,7 +41,7 @@ def ringkas(h):
     kd = []
     for i, k in enumerate(h["kandidat"][:6]):
         kd.append({"no": i + 1, "nama": k["nama"] or k["id"], "label": k["label_colo"], "sumber": k["sumber"],
-                   "owner": k.get("owner") or "", "model": k.get("model") or "", "kap": k["kapasitas"],
+                   "model": k.get("model") or "", "kap": k["kapasitas"],
                    "ketkap": k["ket_kapasitas"], "baru": k["kabel_baru_m"], "colo": k["colo_m"], "cos": k["cos"],
                    "rasio": k.get("rasio_jalur"), "detour": k["detour"], "lolos": k["lolos"],
                    "gagal": k["gagal"], "catatan": k["catatan"], "db": k["budget"]["total_db"],
@@ -275,7 +275,7 @@ ${d.alasan.map(a=>`<div class="why">${esc(a)}</div>`).join("")}${d.peringatan.ma
 ${d.bantu>0?`<div class="warn">${idn(d.bantu)} m jalur masih berupa garis bantu lurus (tidak ada data jalan atau kabel di bagian itu): gambar ulang mengikuti tiang atau jalan.</div>`:""}
 ${d.kandidat.length?"":`<div class="why" style="border-color:#5a6280">Tidak ada kabel feeder di sekitar FDT yang bisa dijadikan kandidat.</div>`}${!d.kandidat.length?"":`<div style="font-size:12px;color:#5b6b78;margin:8px 0 2px">Feeder yang sudah ada di sekitar FDT dan hasil pemeriksaannya:</div>
 <table><tr><th>#</th><th>Feeder</th><th>Sisa tube</th><th>Kabel baru ke FDT</th><th>Feeder dari POP ke titik sambung</th><th>Arah ke FDT</th><th title="Panjang jalur lewat feeder ini dibanding feeder baru dari POP">Panjang jalur vs feeder baru</th><th>Redaman sinyal</th><th>Hasil</th></tr>
-${d.kandidat.map(k=>`<tr class="${k.lolos?"ok":"no"}"><td>${k.no}</td><td><b>${esc(k.nama)}</b><br>${esc(k.label)} ${esc(k.owner)} ${esc(k.model)}</td><td>${esc(KAP[k.kap]||k.kap)}<br><small>${esc(k.ketkap)}</small></td>
+${d.kandidat.map(k=>`<tr class="${k.lolos?"ok":"no"}"><td>${k.no}</td><td><b>${esc(k.nama)}</b><br>${esc(k.label)} ${esc(k.model)}</td><td>${esc(KAP[k.kap]||k.kap)}<br><small>${esc(k.ketkap)}</small></td>
 <td>${idn(k.baru)} m<br><small>${idn(k.detour,1)}× jarak lurus</small></td><td>${k.colo!=null?idn(k.colo)+" m":"tidak terlihat tersambung"}</td><td>${k.sudut==null?"-":(k.searah?"searah":"menjauh")+" ("+k.sudut+"°)"}</td><td>${k.rasio==null?"-":idn(k.rasio,2)+"×"}</td>
 <td>${idn(k.db,1)} dB<br><small>sisa ${idn(k.margin,1)} dB</small></td><td>${k.lolos?"<b>"+esc(k.vonis)+"</b>":esc(k.vonis)}</td></tr>`).join("")}</table>`}`}
 function csv(){const r=[["FDT","Keputusan","Perlu ditinjau","Folder compile (F/T)","Kabel baru (m)","Jika feeder baru dari POP (m)","POP","Alasan"]].concat(D.map(d=>[d.kode,NAMA[d.kep]||d.kep,d.batas?"ya":"",`F${d.nomor.feeder}_T${d.nomor.t}`,d.baru,d.fb,d.pop,d.alasan.join(" | ")]));

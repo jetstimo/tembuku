@@ -79,7 +79,11 @@ def nilai(h):
                     dekat += 1
             sesuai = round(100.0 * dekat / len(pts))
     n = h["penomoran"]
-    return {"fdt": h["fdt"]["kode"], "traksi": g["traksi"], "berkas": g["berkas"], "desainer": g["keputusan"],
+    # Desainer membuat feeder baru, dan kini di inventaris ada kabel yang lewat tepat di FDT itu: hampir pasti feeder
+    # desain itu sendiri yang SUDAH DIBANGUN. Perbedaan ini bukan kesalahan; desain seperti ini tidak bisa diuji adil.
+    dibangun = bool(g["keputusan"] == "FEEDER_BARU" and kep == "COLO" and sel and sel.get("sumber") != "COMPILE"
+                    and sel["kabel_baru_m"] <= 50.0)
+    return {"sudah_dibangun": dibangun, "fdt": h["fdt"]["kode"], "traksi": g["traksi"], "berkas": g["berkas"], "desainer": g["keputusan"],
             "tembuku": h["keputusan"], "cocok": kep == g["keputusan"],
             "folder_desainer": "F%d_T%d" % (g["feeder"], g["t"]), "folder_tembuku": "F%d_T%d" % (n["feeder"], n["t"]),
             "folder_cocok": (n["feeder"], n["t"]) == (g["feeder"], g["t"]), "tap_meleset_m": tap_err,

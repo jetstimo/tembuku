@@ -281,13 +281,20 @@ class PanelTembuku(QtWidgets.QDockWidget):
         if i < 0:
             return
         h = self.hasil[i]
-        awal = os.path.join(self.plugin.folder_keluar(), "TEMBUKU_%s.kmz" % h["fdt"]["kode"])
+        import datetime
+        from . import layanan as _lay
+        awal = os.path.join(self.plugin.folder_keluar(),
+                            _lay._nama_desain(h, datetime.date.today().strftime("%d-%m-%Y")) + ".kmz")
         path, _f = QtWidgets.QFileDialog.getSaveFileName(self, "Save KMZ", awal, "KMZ (*.kmz)")
         if not path:
             return
         from .inti import tulis_kmz
-        tulis_kmz.tulis([h], path, self.plugin.prm(), os.path.basename(path)[:-4])
-        self.iface.messageBar().pushSuccess("Tembuku", "KMZ saved: %s" % path)
+        from . import layanan
+        ikon = layanan.baca_ikon(self.plugin.cache())
+        tulis_kmz.tulis([h], path, self.plugin.prm(), os.path.basename(path)[:-4], ikon_lokal=ikon)
+        pa = (path[:-4] if path.lower().endswith(".kmz") else path) + "_ANALISIS.kmz"
+        tulis_kmz.tulis([h], pa, self.plugin.prm(), os.path.basename(pa)[:-4], ikon_lokal=ikon, analisis=True)
+        self.iface.messageBar().pushSuccess("Tembuku", "KMZ saved: %s (review material: %s)" % (path, os.path.basename(pa)))
 
     def _buka_html(self):
         if self.keluaran and self.keluaran.get("html"):

@@ -16,9 +16,10 @@ from .inti import profil, sumber
 from .inti import validasi as V
 from .inti.teks import T, en
 
-PERAN = ["NASIONAL", "COMPILE", "TARGET", "POP", "LAIN"]
+PERAN = ["NASIONAL", "COMPILE", "TARGET", "POP", "AUDIT", "LAIN"]
 LABEL = {"NASIONAL": "Cable inventory (existing network)", "COMPILE": "Feeder design compilation (on-going)",
-         "TARGET": "Target FDTs", "POP": "POP / OLT locations", "LAIN": "(ignore this file)"}
+         "TARGET": "Target FDTs", "POP": "POP / OLT locations", "AUDIT": "Feeder tube record",
+         "LAIN": "(ignore this file)"}
 TINGKAT_EN = {V.FATAL: "CANNOT RUN", V.PERBAIKI: "AUTO-CORRECTED", V.PERINGATAN: "CHECK", V.INFO: "NOTE"}
 WARNA = {V.FATAL: "#b91c1c", V.PERBAIKI: "#0e7c7b", V.PERINGATAN: "#b45309", V.INFO: "#5b6b78"}
 

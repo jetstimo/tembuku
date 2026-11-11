@@ -45,8 +45,20 @@ SINONIM = {
 _PRIO = {k: {s: i for i, s in enumerate(v)} for k, v in SINONIM.items()}
 
 
+_RX_NORM = re.compile(r"[^A-Z0-9]")
+_NORM = {}
+
+
 def norm(k):
-    return re.sub(r"[^A-Z0-9]", "", str(k or "").upper())
+    """Nama kolom -> bentuk baku (huruf besar, tanpa tanda baca). Hasil diingat: nama kolom yang sama muncul jutaan
+    kali saat membaca inventaris besar."""
+    try:
+        return _NORM[k]
+    except (KeyError, TypeError):
+        v = _RX_NORM.sub("", str(k or "").upper())
+        if isinstance(k, str) and len(_NORM) < 20000:
+            _NORM[k] = v
+        return v
 
 
 def cari(attrs, makna):
@@ -64,7 +76,8 @@ def cari(attrs, makna):
 
 
 def nilai(attrs, makna, default=None):
-    return cari(attrs, makna)[0] if cari(attrs, makna)[0] is not None else default
+    v = cari(attrs, makna)[0]
+    return v if v is not None else default
 
 
 def ada(attrs, makna):

@@ -422,6 +422,7 @@ def _pop_traksi(popf, c, data):
 
 
 TUBE_PER_FEEDER = 12
+MARGIN_TIPIS_DB = 1.0        # sisa redaman di bawah ini ditandai untuk dicek (bukan mengubah keputusan)
 
 
 def _feeder_kabel_inventaris(h, sel, data):
@@ -760,6 +761,14 @@ def _putuskan(h, prm):
         h["alasan"].append(T("Tidak ada jalur ke POP maupun ke feeder yang ada di data ini: rancang FDT ini secara "
                              "manual.", "No route to the POP or to an existing feeder in this data: design this FDT "
                              "by hand."))
+    sel = h.get("terpilih")
+    bud = (sel or {}).get("budget") or {}
+    if sel and bud.get("margin_db") is not None and 0 <= bud["margin_db"] < MARGIN_TIPIS_DB:
+        h["peringatan"].append(T("Redaman sinyal hampir di batas (%s dari batas %s, sisa %s). Hitungan ini memakai nilai "
+                                 "standar, jadi ukur di lapangan atau pastikan kelas perangkat optiknya sebelum dibangun.",
+                                 "Signal loss is close to the limit (%s of %s, %s to spare). The figure uses standard "
+                                 "values, so measure on site or confirm the optical class before building.") % (
+            db(bud["total_db"]), db(prm["kelas_olt_db"]), db(bud["margin_db"])))
 
 
 def pilih_manual(h, i, data):

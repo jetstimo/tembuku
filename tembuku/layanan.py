@@ -398,21 +398,28 @@ class Sesi(object):
         hasil = self.hasil if hasil is None else hasil
         os.makedirs(folder_keluar, exist_ok=True)
         tgl = datetime.datetime.now().strftime("%Y%m%d_%H%M")
-        out = {"kmz": [], "html": None, "semua": None, "temuan": None}
+        out = {"kmz": [], "analisis": [], "html": None, "semua": None, "temuan": None}
         self.progres("Writing the KMZ files and the report", 96)
         terpakai = set()
+        tgl_nama = datetime.date.today().strftime("%d-%m-%Y")
         for h in hasil:
-            nm = "TEMBUKU_%s_%s.kmz" % (_aman(h["fdt"]["kode"]), NAMA_BERKAS.get(h["keputusan"], h["keputusan"]))
-            i = 2
-            while nm.lower() in terpakai:           # kode FDT kembar: jangan menimpa KMZ sebelumnya
-                nm = "TEMBUKU_%s_%s_%d.kmz" % (_aman(h["fdt"]["kode"]), NAMA_BERKAS.get(h["keputusan"], h["keputusan"]), i)
+            dasar = _nama_desain(h, tgl_nama)
+            nm, i = dasar + ".kmz", 2
+            while nm.lower() in terpakai:           # nama kembar: jangan menimpa KMZ sebelumnya
+                nm = "%s_%d.kmz" % (dasar, i)
                 i += 1
             terpakai.add(nm.lower())
             out["kmz"].append(tulis_kmz.tulis([h], os.path.join(folder_keluar, nm), self.prm, nm[:-4],
                                              ikon_lokal=self.ikon_lokal))
+            na = nm[:-4] + "_ANALISIS.kmz"
+            out["analisis"].append(tulis_kmz.tulis([h], os.path.join(folder_keluar, na), self.prm, na[:-4],
+                                                  ikon_lokal=self.ikon_lokal, analisis=True))
         if len(hasil) > 1:
             out["semua"] = tulis_kmz.tulis(hasil, os.path.join(folder_keluar, "TEMBUKU_SEMUA_%s.kmz" % tgl), self.prm,
                                            "Tembuku - semua FDT %s" % tgl, ikon_lokal=self.ikon_lokal)
+            out["analisis"].append(tulis_kmz.tulis(
+                hasil, os.path.join(folder_keluar, "TEMBUKU_SEMUA_%s_ANALISIS.kmz" % tgl), self.prm,
+                "Tembuku - bahan tinjauan semua FDT %s" % tgl, ikon_lokal=self.ikon_lokal, analisis=True))
         salah = []
         for pth in out["kmz"] + ([out["semua"]] if out["semua"] else []):
             salah += ["%s: %s" % (os.path.basename(pth), m) for m in tulis_kmz.periksa_template(pth)]
@@ -438,6 +445,15 @@ class Sesi(object):
         if self.nilai_uji:
             from . import uji_akurasi
             uji = {"ringkasan": uji_akurasi.ringkasan(self.nilai_uji), "baris": self.nilai_uji}
+            nb = [x["fdt"] for x in self.nilai_uji if x.get("sudah_dibangun")]
+            if nb:
+                self.temuan.tambah(V.INFO, "Uji akurasi",
+                                   T("%d FDT tidak bisa diuji adil: desainer membuat feeder baru, dan feeder itu kini sudah "
+                                     "ada di inventaris kabel (lewat tepat di FDT), sehingga Tembuku memakainya. Ini bukan "
+                                     "kesalahan: %s",
+                                     "%d FDTs cannot be tested fairly: the designer built a new feeder, and that feeder is "
+                                     "now in the cable inventory (passing right at the FDT), so Tembuku uses it. This is "
+                                     "not an error: %s") % (len(nb), ", ".join(nb[:8])))
             out["uji"] = os.path.join(folder_keluar, "TEMBUKU_UJI_AKURASI_%s.csv" % tgl)
             with open(out["uji"], "w", encoding="utf-8-sig", newline="") as fh:
                 w = csv.writer(fh)
@@ -473,8 +489,8 @@ class Sesi(object):
             w.writerow(["FDT", "Keputusan", "Perlu ditinjau", "Folder compile (F/T)", "Feeder yang dipakai", "Jenis colo",
                         "Sisa tube", "Kabel baru (m)", "Garis bantu yang harus digambar ulang (m)",
                         "Feeder baru dari POP (m)", "Jalur lewat feeder dibanding feeder baru (x)", "Redaman sinyal (dB)",
-                        "POP", "Alasan", "Peringatan"])
-            for h in hasil:
+                        "POP", "Alasan", "Peringatan", "Berkas KMZ desain"])
+            for h, pth in zip(hasil, out["kmz"]):
                 k = h.get("terpilih") or {}
                 fb = h.get("feeder_baru") or {}
                 rute = k.get("rute") or (fb if h["keputusan"] == "FEEDER_BARU" else {})
@@ -486,7 +502,8 @@ class Sesi(object):
                                                                h["keputusan"] == "FEEDER_BARU" else ""),
                             round(rute.get("bantu_m", 0)) if rute else "", round(fb["panjang_m"]) if fb else "",
                             k.get("rasio_jalur", ""), (k.get("budget") or {}).get("total_db", ""),
-                            h["pop"]["nama"] if h["pop"] else "", " | ".join(h["alasan"]), " | ".join(h["peringatan"])])
+                            h["pop"]["nama"] if h["pop"] else "", " | ".join(h["alasan"]), " | ".join(h["peringatan"]),
+                            os.path.basename(pth)])
         out["temuan"] = os.path.join(folder_keluar, "TEMBUKU_PEMERIKSAAN_INPUT_%s.txt" % tgl)
         with open(out["temuan"], "w", encoding="utf-8") as fh:
             fh.write("Tembuku - pemeriksaan input %s\n\n%s\n" % (meta["waktu"], self.temuan.teks() or "Tidak ada temuan."))
@@ -518,6 +535,18 @@ def _kena(ll, bb):
     xs = [p[0] for p in ll]
     ys = [p[1] for p in ll]
     return max(xs) >= bb[0] and min(xs) <= bb[2] and max(ys) >= bb[1] and min(ys) <= bb[3]
+
+
+def _nama_desain(h, tgl):
+    """Nama berkas KMZ desain mengikuti pola berkas desain feeder yang dipakai compile:
+    '<ID cluster>_APD Feeder KMZ_<nama area>_<dd-mm-yyyy>' (nama folder traksi tanpa awalan F/T). Bila ID cluster atau
+    nama area tidak ada di data, dipakai kode FDT: 'TEMBUKU_<kode FDT>_<keputusan>'."""
+    f = h["fdt"]
+    if f.get("cluster") and f.get("area"):
+        nama = "%s_APD Feeder KMZ_%s_%s" % (f["cluster"], f["area"], tgl)
+        nama = "".join("_" if ch in '\\/:*?"<>|' or ord(ch) < 32 else ch for ch in nama).strip(" .")
+        return nama[:120]
+    return "TEMBUKU_%s_%s" % (_aman(f["kode"]), NAMA_BERKAS.get(h["keputusan"], h["keputusan"]))
 
 
 def _aman(s):
