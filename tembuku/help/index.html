@@ -95,6 +95,13 @@ only in the description table of a KMZ are read too. Presentations, documents an
 Very large inventory files are fine; the first run builds a small index of your work area (a few seconds), later runs
 reuse it.</p>
 
+<div class="tip"><b>New in 1.4.0.</b> Free tubes are read from the folders of the feeder design compilation only: one feeder
+is one 144-fibre trunk of 12 tubes, and the T number of a folder (<code>F2_T9</code>) is the tube it uses. T1-T8 go
+through the 96-fibre cable, T9-T12 through 48-fibre branches from the closure 144 at the POP. Tembuku proposes the lowest
+free tube of the group that fits the 6 km rule, prefers a tap at an existing slack or closure, and can propose a new
+48-fibre branch from the closure 144 of an existing feeder. The cable inventory is used as existing pole routes only.
+When two feeders are equally good, the lowest feeder number is used and the other is listed for you to choose.</div>
+
 <h2 id="results">Reading the results</h2>
 <p>Every FDT gets one of these decisions. The report and the KMZ use the Indonesian names shown in brackets.</p>
 <table><tr><th>Decision</th><th>What it means</th><th>What you do</th></tr>
