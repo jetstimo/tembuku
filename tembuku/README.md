@@ -41,6 +41,43 @@ Esri World Imagery (0.3-0.5 m, your own API key) with the capture date at the ma
 than 12 months. The HTML report always shows OpenStreetMap road lines (offline) and, if you allow it, the same satellite layers.
 **Help:** *Vector → Tembuku → Help and Quick Guide* opens an offline guide with a glossary.
 
+## New in 1.4.4 (engineering rules checked against sources and data)
+Every rule of the 11 Nov 2026 engineering document was checked against credible technical sources (ITU-T, the Fiber
+Optic Association, cable and closure manufacturers' installation guides, Indonesian road-space regulation) and against
+213 approved designs in four cities. See *DASAR_KEPUTUSAN.md*, section 0b, for the full table.
+- **Tube group by distance (6 km) is not applied literally by default.** Applied literally: 36 % of F/T folders match
+  and 563 km of new cable; off: 54 % and 425 km (the designers drew 495 km). Optical loss depends on route length, not
+  fibre count. A 48-fibre branch over 6 km is still rejected.
+- **Taps at existing slack come first when the new cable is at most 600 m (or 15 %) longer**, not at any cost. Mid-span
+  closures can be built and are marked *please check*.
+- **KMZ closer to the APD template**: tap at the exact slack coordinate, Colo Pole colour by cable size, template icons
+  (Closure 96 for 96-144, hanger, OLT), 9 m crossing poles, no extra New Infra folder, a plain-language summary on each
+  new cable, POP folder without ".kmz", and a team icon folder next to the data is found automatically.
+- **Fix for feeder tube record tables**: the tube of an FDT that is designed again is freed in the record as well (Palembang
+  POP 3 with its record: same F/T folder 2 -> 31 of 60). Faster nearest-point and corridor checks, same results.
+
+## New in 1.4.3 (checked on 213 approved designs in four cities)
+- **Lowest free tube of the feeder**, as the designers do. Reserving T9-T12 for FDTs within 6 km is now off by default
+  (switch it on under *Advanced*); the 6 km limit for 48-fibre cables still applies.
+- **Taps at an existing slack, closure or cable end come first** when the new cable is at most 300 m (or 15 %) longer.
+  Any other tap, and any tube number not yet recorded in the compilation, is marked *please check*.
+- **More cable on existing poles** wins among equal candidates; a closure proposed for one FDT can be shared by the next.
+- **Plain-language results**: each FDT starts with one sentence saying what to build, the F/T folder, the new cable
+  and what a new feeder would need instead.
+- Against 1.4.2 on the 213 designs: same decision 82 % (unchanged), same F/T folder 37 % -> 53 %, route match median
+  42 % -> 73 %, total proposed new cable 523 km -> 420 km.
+
+## New in 1.4.2 (data-reading fixes of 12 Nov 2026)
+Found by running four city compilations (213 designs). The design rules and the route limit of 1.24 are unchanged.
+- **Folder names with several tubes are read.** `F8_T1,T2,T3_…`, `F3_T3_T4_T5_…`, `F1_T10,11_…` and folders without a
+  cluster ID (`F1_T1_APD Feeder_…`) now count in the tube book; before, 62 of 342 folders were skipped.
+- **An FDT that is already in the compilation is designed again fairly.** Its earlier design is hidden while it is
+  analysed, so it no longer taps its own cable with 0 m of new cable.
+- **The tube book CSV lists every POP and feeder,** also when the POP folder and the POP point have different names.
+- **A POP folder without a POP/OLT point** gets its location from the start of its 144-fibre feeder cables and is listed
+  under "please check"; add the point to the OLT folder to remove the note.
+- Accuracy test on the four compilations: same decision 76 % → 82 %, same F/T folder 25 % → 37 %.
+
 ## New in 1.4.0 (engineering rules of 11 Nov 2026)
 - **Tube book per feeder, from the compilation folders.** One feeder = one 144-fibre trunk = 12 tubes. The T number of a
   folder `F<n>_T<k>` is the tube used. T1-T8 go through the 96-fibre cable, T9-T12 through 48-fibre branches from the

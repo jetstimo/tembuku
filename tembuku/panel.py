@@ -290,7 +290,8 @@ class PanelTembuku(QtWidgets.QDockWidget):
             return
         from .inti import tulis_kmz
         from . import layanan
-        ikon = layanan.baca_ikon(self.plugin.cache())
+        s = getattr(self.plugin, "sesi", None)
+        ikon = s.ikon_lokal if s is not None and getattr(s, "ikon_lokal", None) else layanan.baca_ikon(self.plugin.cache())
         tulis_kmz.tulis([h], path, self.plugin.prm(), os.path.basename(path)[:-4], ikon_lokal=ikon)
         pa = (path[:-4] if path.lower().endswith(".kmz") else path) + "_ANALISIS.kmz"
         tulis_kmz.tulis([h], pa, self.plugin.prm(), os.path.basename(pa)[:-4], ikon_lokal=ikon, analisis=True)

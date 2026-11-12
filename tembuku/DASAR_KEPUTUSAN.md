@@ -5,6 +5,55 @@ Values are of three kinds: **standard** (from a current international standard o
 (measured on approved real designs) and **policy** (an engineering choice your team should confirm). Every value can be
 changed under *Advanced* in the Tembuku window.
 
+## 0b. Version 1.4.4: every engineering rule (PDF 11 Nov 2026) checked against sources and data
+A rule is followed as written unless a credible source **and** the 213-design test show a better choice. Rules not
+followed literally stay available under *Advanced* (set them to the PDF value to apply them as written).
+
+| PDF rule | 1.4.4 default | Basis |
+|---|---|---|
+| 3.1/3.2 FDT up to 6 km on the 48F group (T9-T12), beyond on 96F (T1-T8), as a **preference** | Off (`utamakan_aturan_6km` = No) | Loss grows with length (fibre attenuation ITU-T G.652; class B+ budget 28 dB, G.984.2; FOA: GPON 32-split 13-28 dB), not with fibre count, so the group gives no optical gain. Test: F/T match 36 % on vs 54 % off; new cable 563 vs 425 km |
+| 48F branch at most 6 km; longer fibre path on 96F | Followed (`batas_48f_km` 6) | Capacity reserve on long routes: fibre is cheap compared with installation (FOA FTTH design) |
+| 3.3 Tap at existing slack, no new slack | Followed with a limit: slack first when at most 600 m / 15 % more cable (`toleransi_slack_antar_m`) | Mid-span access is a normal practice with loose-tube cable (FOA mid-span access; STL, Superior Essex TG082 and OFS guides give 1.8-2.4 m sheath openings). Extra cable to reach a slack costs more than a closure beyond a few hundred metres. Test: 300 m 421 km / 99 checks, **600 m 425 km / 92 checks / best F/T**, 1000 m 434 km / 81, always 481 km / 60 |
+| Closure 0-5 m strong, 5-10 m check | Followed (`tap_slack_m` 10) | - |
+| Closure 6 holes (1 in + 5 out) | Followed | Manufacturer port count; policy |
+| 144F from POP at most 750 m, slack window per feeder | Followed | Policy |
+| Hanger/slack every 300 m | Followed | Policy; aerial slack storage at intervals is common practice (Preformed Line Products) |
+| 9 m poles on both sides of a road crossing | Followed, also on residential/unclassified roads | Road crossings need the road authority's permit (Permen PU 20/PRT/M/2010); a 9 m pole keeps clearance over traffic |
+| Avoid footways and motorways | Followed (configurable) | - |
+| Template APD folders exact, "Collo" spelling kept, no extra root | Followed; one POP folder as in the compilation, no extra root | Checked after writing (`periksa_template`) |
+| Priority: direction, then colo with free tube, then efficient route, then New Infra | Followed | - |
+
+Sources: ITU-T G.652 (08/2024), G.984.2, G.671, G.9940; The Fiber Optic Association, *FTTH design* and *Midspan access*
+(thefoa.org); STL *Hardened CONCAT II* (2026); Superior Essex *TG082 FI2 install guide*; OFS *Drop Terminal* practice;
+Preformed Line Products *SLACKLOOP*; Peraturan Menteri PU 20/PRT/M/2010.
+
+Known limit: in 34 of 213 designs Tembuku proposes less than half the designer's new cable. In about half of them the
+whole proposed route lies on the designer's own route (an earlier tap on the same line); the others use another feeder.
+The data cannot show whether the designer had a reason not recorded in the compilation (for example a full cable), so
+check such results before budgeting.
+
+## 0a. Version 1.4.3: what the 213 approved designs of four cities showed
+Data: compilations of Bengkulu POP 4 (21 designs), Gresik (47), Palembang POP 3 (60) and Serang (85), November 2026.
+
+| Finding | Evidence | Rule in 1.4.3 |
+|---|---|---|
+| Designers take the lowest free tube of the feeder; they do not reserve T9-T12 for FDTs within 6 km | With the reservation on, 76 of 120 tube groups matched the designer; off, 111 of 127 | `utamakan_aturan_6km` = No by default; a 48-fibre path over 6 km is still rejected |
+| Taps are at existing points | Of 186 reuse designs: 59 % at an existing slack/closure (<= 10 m), 15 % at a cable end, 25 % mid-cable | A tap at a slack, closure or cable end is preferred when the new cable is at most 300 m / 15 % longer (600 m from 1.4.4) (`toleransi_slack_antar_m`); not for FDTs right next to the feeder (< 150 m, `slack_min_kabel_m`) |
+| An unrecorded tube is not proof of a free tube (PDF 3.2) | - | Every proposed tube is marked *please check* |
+| Higher colo ratio is better (PDF 4) | - | Among equal candidates, more new cable on existing poles wins |
+| Avoid footways and motorways, configurable (PDF 4) | - | `kelas_jalan_hindari` |
+| 9 m poles on both sides of a road crossing (PDF 3.4) | - | `kelas_seberang` includes residential and unclassified roads |
+
+Leave-one-out on the 213 designs:
+
+| Measure | 1.4.2 | 1.4.3 |
+|---|---|---|
+| Same decision (reuse / new feeder) | 174 (82 %) | 174 (82 %) |
+| Same feeder | 134 (63 %) | 140 (66 %) |
+| Same F/T folder | 79 (37 %) | 112 (53 %) |
+| Route match, median | 42 % | 73 % |
+| Total proposed new cable | 523 km | 420 km |
+
 ## 0. Version 1.4.0: engineering rules of 11 November 2026 (these override older text below where they differ)
 | Rule | How Tembuku applies it |
 |---|---|
@@ -22,6 +71,26 @@ an inventory cable and F1_T1 with a 347 m straight line (8 % route match); versi
 from the closure 144 of feeder 2, 80 % of the route within 20 m of the designer's cable. Leave-one-out on the 19 folders of
 the same compilation: equal decisions 12 -> 15, equal F/T folders 4 -> 10, median tap offset 1,545 m -> 154 m. Feeder 4
 qualifies equally (shared pole line) and is listed as an equal alternative; the lowest feeder number is used.
+
+### Version 1.4.2: wider test on four cities (12 November 2026)
+Leave-one-out on the compilations of Bengkulu POP 4, Gresik, Palembang POP 3 and Serang (213 designs, OpenStreetMap
+roads on). Four data-reading faults were fixed first: folder names with several tubes (`F8_T1,T2,T3`), an FDT tapping
+its own earlier design, an incomplete tube book CSV, and POP folders without a POP point (now located from the start of
+their 144-fibre cables).
+
+| Compilation | Designs | Same decision | Same F/T folder | Median tap offset | Median route match |
+|---|---|---|---|---|---|
+| Bengkulu POP 4 | 21 | 19 | 10 | 274 m | 61 % |
+| Gresik | 47 | 38 | 23 | 880 m | 55 % |
+| Palembang POP 3 | 60 | 48 | 25 | 1,230 m | 51 % |
+| Serang | 85 | 69 | 21 | 1,388 m | 23 % |
+| **Total** | **213** | **174 (82 %)** | **79 (37 %)** | 1,280 m | 42 % |
+
+Open points for the engineering team: (1) 25 designs were reused by the designer where Tembuku proposes a new feeder -
+13 because of the route ratio limit, 9 because the tube group of that feeder is recorded as full; (2) a route ratio
+limit of 1.35 instead of 1.24 gives 178 equal decisions and 87 equal folders, but turns three of the designers' new
+feeders into reuse; the limit stays 1.24 until confirmed; (3) the proposed tube is always the lowest free number,
+which designers do not always follow. Results are a first draft for a designer to review.
 
 ## 1. Workflow (feeder design procedure, steps 1-6)
 | Step | Question | How Tembuku answers it |

@@ -8,6 +8,7 @@ import datetime
 import json
 import math
 import os
+import re
 import time
 
 from .inti import indeks, laporan, mesin, osm, profil, sumber, tulis_kmz
@@ -34,11 +35,37 @@ def jenis_galat(e):
     return "LURING"
 
 
-def baca_ikon(folder_cache, maks=512 * 1024):
-    """Ikon organisasi (opsional): berkas PNG di <folder Tembuku>/ikon atau Documents/Tembuku/ikon. Hanya PNG asli
-    (dicek dari tanda berkas) dan berukuran wajar; tidak ikut di plugin, tetap di komputer pengguna."""
+def folder_ikon_data(paths, naik=2):
+    """Cari folder ikon milik tim di sekitar berkas data (mis. "ICON APD FTTH" di samping folder COMPILE FEEDER):
+    folder berkas dan hingga `naik` tingkat di atasnya, hanya subfolder langsung yang namanya memuat "icon"/"ikon"."""
+    out, lihat = [], set()
+    for p in paths or []:
+        d = os.path.dirname(os.path.abspath(p)) if os.path.isfile(p) else os.path.abspath(p)
+        for _ in range(naik + 1):
+            if d in lihat:
+                break
+            lihat.add(d)
+            try:
+                for f in sorted(os.listdir(d)):
+                    q = os.path.join(d, f)
+                    if re.search(r"icon|ikon", f, re.I) and os.path.isdir(q) and q not in out:
+                        out.append(q)
+            except OSError:
+                pass
+            atas = os.path.dirname(d)
+            if atas == d:
+                break
+            d = atas
+    return out
+
+
+def baca_ikon(folder_cache, maks=512 * 1024, paths=None):
+    """Ikon organisasi (opsional): berkas PNG di <folder Tembuku>/ikon, Documents/Tembuku/ikon, atau folder ikon tim di
+    sekitar berkas data (mis. "ICON APD FTTH"). Hanya PNG asli (dicek dari tanda berkas) dan berukuran wajar; tidak ikut
+    di plugin, tetap di komputer pengguna. Bila nama berkas sama, yang lebih dulu ditemukan dipakai."""
     out = {}
-    for d in (os.path.join(folder_cache or "", "ikon"), os.path.join(os.path.expanduser("~"), "Documents", "Tembuku", "ikon")):
+    for d in [os.path.join(folder_cache or "", "ikon"), os.path.join(os.path.expanduser("~"), "Documents", "Tembuku", "ikon")] \
+            + folder_ikon_data(paths):
         if not os.path.isdir(d):
             continue
         for f in sorted(os.listdir(d)):
@@ -92,7 +119,7 @@ class Sesi(object):
                                                              "built-in labels are used") % self.istilah["_galat"][:160],
                                "istilah.json", T("periksa penulisan JSON di istilah.json",
                                                  "check the JSON in istilah.json"))
-        self.ikon_lokal = baca_ikon(folder_cache)
+        self.ikon_lokal = baca_ikon(folder_cache, paths=self.paths)
         mesin.pakai_istilah(self.istilah)
         sumber.pakai_istilah(self.istilah)
 
@@ -152,11 +179,19 @@ class Sesi(object):
                                          "compilation. Tembuku uses the point in your file as it is (not moved)")
                                        % (f["kode"], jauh), f.get("berkas", ""),
                                        T("pastikan titik mana yang benar", "check which point is right"))
-                self.temuan.tambah(V.INFO, "Kesesuaian data", T("FDT %s sudah ada di compile desain feeder (sudah punya "
-                                                                "feeder); tetap dianalisis sebagai pembanding",
-                                                                "FDT %s is already in the feeder design compilation (it "
-                                                                "already has a feeder); it is still analysed for "
-                                                                "comparison") % f["kode"])
+                # desain lama FDT ini disembunyikan saat FDT ini dianalisis: tanpa itu Tembuku menumpang kabel
+                # desainnya sendiri (kabel baru 0 m) dan tube lamanya terhitung terpakai
+                milik = sorted({g["traksi"] for c in comps for g in c["fdt"]
+                                if g["kode"].upper() == f["kode"].upper() and not g.get("colo_saudara")
+                                and g.get("traksi")})
+                f["_kecuali"] = set(milik)
+                self.temuan.tambah(V.INFO, "Kesesuaian data", T("FDT %s sudah ada di compile desain feeder (folder %s). "
+                                                                "Desain lama itu disembunyikan selama FDT ini dirancang "
+                                                                "ulang, jadi hasilnya pembanding yang setara",
+                                                                "FDT %s is already in the feeder design compilation "
+                                                                "(folder %s). That earlier design is hidden while this FDT "
+                                                                "is designed again, so the result is a fair comparison")
+                                   % (f["kode"], ", ".join(x[:40] for x in milik) or "-"))
         # area kerja = sekitar FDT target, compile dan POP: hanya area ini yang diindeks dari KMZ kabel nasional
         titik = [f["ll"] for f in self.target]
         for c in comps:
@@ -180,6 +215,14 @@ class Sesi(object):
                 progres=lambda t, pc, base=base: self.progres(t, base + 55.0 / max(nb, 1) * (pc or 0) / 100.0),
                 batal=self._batal))
         self.data = mesin.Data(ix, comps, pops, jalan=self._jalan if (self.pakai_osm or self.jalan_lokal) else None)
+        for nm, nk in self.data.pop_dugaan:
+            self.temuan.tambah(V.PERINGATAN, "Kelengkapan",
+                               T("folder POP '%s' tidak punya titik POP/OLT di data; lokasi POP diambil dari pangkal %d "
+                                 "kabel 144C feeder-nya",
+                                 "POP folder '%s' has no POP/OLT point in the data; the POP location is taken from the "
+                                 "start of its %d feeder 144C cables") % (nm, nk), "",
+                               T("tambahkan titik POP ini di folder OLT compile atau di KMZ daftar POP",
+                                 "add this POP point to the OLT folder of the compilation or to the POP list KMZ"))
         for p in self.peran.get("AUDIT", []):
             self.data.audit += sumber.baca_audit(p) or []
         if not self.data.pops:
@@ -341,10 +384,13 @@ class Sesi(object):
         self.nilai_uji = []
         self.siapkan_jalan(targets)
         n = len(targets)
+        self._kec_batch = set()     # desain lama FDT yang dirancang ulang di proses ini (tetap tersembunyi sampai selesai)
         for i, f in enumerate(targets):
             self.progres("Designing FDT %s (%d/%d)" % (f["kode"], i + 1, n), 70 + 25.0 * i / max(n, 1))
             try:
-                self.data.kecuali = set(f["_uji"]["kecuali"]) if f.get("_uji") else set()
+                if not f.get("_uji"):
+                    self._kec_batch |= set(f.get("_kecuali") or ())
+                self.data.kecuali = set(f["_uji"]["kecuali"]) if f.get("_uji") else set(self._kec_batch)
                 self.hasil.append(mesin.analisis(f, self.data, self.prm))
                 if not f.get("_uji"):
                     # FDT berikutnya dalam proses yang sama melihat tube & kabel yang baru diusulkan (tidak dobel)
@@ -513,8 +559,8 @@ class Sesi(object):
                             h["pop"]["nama"] if h["pop"] else "", " | ".join(h["alasan"]), " | ".join(h["peringatan"]),
                             os.path.basename(pth),
                             ("T%s (%s)" % (n["t"], n.get("kelompok") or "-")) if n.get("t") else "",
-                            ("%s existing '%s'" % (k["tap_slack"]["jenis"], k["tap_slack"]["nama"])) if k.get("tap_slack")
-                            else ("titik baru di kabel" if k else "")])
+                            str(mesin.label_tap(k["tap_slack"])) if k.get("tap_slack")
+                            else ("titik baru di tengah kabel (pastikan ada cadangan kabel)" if k else "")])
         # buku tube per feeder (audit): tube terpakai & kosong per kelompok, dari hierarki folder compile + hasil ini
         out["tube"] = os.path.join(folder_keluar, "TEMBUKU_BUKU_TUBE_%s.csv" % tgl)
         with open(out["tube"], "w", encoding="utf-8-sig", newline="") as fh:
@@ -526,17 +572,36 @@ class Sesi(object):
             for h in hasil:
                 n = h["penomoran"]
                 if h["keputusan"] != "PERLU_MANUAL" and h.get("pop"):
-                    usul.setdefault((sumber.kunci_pop(h["pop"]["nama"]), int(n["feeder"])), []).append(
+                    # kunci = POP pemilik folder feeder (sama dengan buku tube mesin), bukan nama titik POP terdekat
+                    np_ = self.data.nama_pop(n.get("pop_folder") or h["pop"]["nama"])
+                    usul.setdefault((sumber.kunci_pop(np_), int(n["feeder"])), []).append(
                         "%s -> T%s" % (h["fdt"]["kode"], n["t"]))
+            # semua POP yang punya feeder di compile (nama folder POP boleh berbeda dari nama titik POP) + titik POP
+            nama_pop, lihat = [], set()
+            for c in self.data.compiles:
+                for (_b, popf, _f, _k) in c["traksi"]:
+                    nm = self.data.nama_pop(popf, c)
+                    if sumber.kunci_pop(nm) not in lihat:
+                        lihat.add(sumber.kunci_pop(nm))
+                        nama_pop.append(nm)
             for p in self.data.pops:
-                led = self.data.ledger(p["nama"])
-                kp = sumber.kunci_pop(p["nama"])
-                for fe in sorted(set(led) | set(f for (pp, f) in usul if pp == kp)):
-                    e = led.get(fe, {"tube": set(), "fdt": set()})
-                    k96, k48 = sorted(g96 - e["tube"]), sorted(g48 - e["tube"])
-                    w.writerow([p["nama"], fe, len(e["fdt"]), mesin._teks_tube(e["tube"]), mesin._teks_tube(k96),
-                                mesin._teks_tube(k48), "PENUH" if not k96 and not k48 else "masih ada tube kosong",
-                                "; ".join(usul.get((kp, fe), []))])
+                if sumber.kunci_pop(p["nama"]) not in lihat:
+                    lihat.add(sumber.kunci_pop(p["nama"]))
+                    nama_pop.append(p["nama"])
+            kec_lama = self.data.kecuali
+            self.data.kecuali = set(getattr(self, "_kec_batch", None) or ())   # desain lama yang dirancang ulang: tidak dobel
+            try:
+                for nm in nama_pop:
+                    led = self.data.ledger(nm)
+                    kp = sumber.kunci_pop(nm)
+                    for fe in sorted(set(led) | set(f for (pp, f) in usul if pp == kp)):
+                        e = led.get(fe, {"tube": set(), "fdt": set()})
+                        k96, k48 = sorted(g96 - e["tube"]), sorted(g48 - e["tube"])
+                        w.writerow([nm, fe, len(e["fdt"]), mesin._teks_tube(e["tube"]), mesin._teks_tube(k96),
+                                    mesin._teks_tube(k48), "PENUH" if not k96 and not k48 else "masih ada tube kosong",
+                                    "; ".join(usul.get((kp, fe), []))])
+            finally:
+                self.data.kecuali = kec_lama
         out["temuan"] = os.path.join(folder_keluar, "TEMBUKU_PEMERIKSAAN_INPUT_%s.txt" % tgl)
         with open(out["temuan"], "w", encoding="utf-8") as fh:
             fh.write("Tembuku - pemeriksaan input %s\n\n%s\n" % (meta["waktu"], self.temuan.teks() or "Tidak ada temuan."))

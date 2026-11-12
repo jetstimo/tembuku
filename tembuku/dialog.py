@@ -173,7 +173,7 @@ class DialogTembuku(QtWidgets.QDialog):
         p = profil.baru(ubah)
         self.t_prm.setRowCount(0)
         dasar = {"KEBIJAKAN": "policy", "DATA": "calibrated on real designs", "STANDAR": "standard",
-                 "KEBIJAKAN+DATA": "policy, checked against real designs"}
+                 "KEBIJAKAN+DATA": "policy, checked against real designs", "PDF": "engineering rules of 11 Nov 2026"}
         for k, (v0, kel, _ket) in profil.BAWAAN.items():
             nama, arti = profil.PENJELASAN_EN[k]
             r = self.t_prm.rowCount()
