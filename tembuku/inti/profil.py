@@ -23,11 +23,30 @@ BAWAAN = {
     "maks_144_m": (750, "KEBIJAKAN", "Panjang maksimum kabel 144F dari POP"),
     "closure_lubang_maks": (6, "KEBIJAKAN", "Jumlah lubang kabel satu closure: 1 masuk + paling banyak 5 keluar. Closure existing yang "
                             "sudah penuh tidak dipakai sebagai titik sambung"),
-    "tulis_tiang": (True, "KEBIJAKAN", "Tulis titik tiang baru di ruas New Infra ke KMZ: tiang 7 m tiap tiang_m, tiang 9 m di kedua sisi "
-                    "penyeberangan jalan utama. Tiang ini usulan (virtual) dan ikut terbaca aplikasi BOM"),
+    "tulis_tiang": (False, "DATA", "Tulis titik tiang baru (7 m tiap tiang_m, 9 m di kedua sisi penyeberangan) ke folder Tiang di KMZ "
+                    "desain. Bawaan Tidak: desainer tidak menaruh titik tiang (0 dari 46 traksi di 4 compile) dan menandai "
+                    "ruas tiang baru dengan garis New Infra, jadi titik tiang bisa terhitung dua kali di aplikasi BOM. "
+                    "Perkiraan tiang tetap ada di keterangan garis New Infra dan di KMZ analisis"),
     "tiang_m": (50, "KEBIJAKAN", "Jarak antar tiang baru di ruas New Infra"),
-    "utamakan_aturan_6km": (True, "KEBIJAKAN", "Kandidat yang kelompok tubenya sesuai aturan 6 km (<= 6 km cabang 48F T9-T12, > 6 km "
-                            "kabel 96F T1-T8) didahulukan; kandidat lain tetap dipakai bila tidak ada yang sesuai"),
+    "utamakan_aturan_6km": (False, "DATA", "PDF 3.1 + 3.2 (Ya = ikuti PDF apa adanya): kandidat dengan kelompok tube sesuai jarak 6 km "
+                            "didahulukan. Bawaan Tidak: redaman ditentukan panjang jalur, bukan jumlah serat (ITU-T G.652/G.984.2), "
+                            "dan uji 213 desain 4 kota: folder F/T sama 54 % bila Tidak vs 36 % bila Ya, kabel baru 421 vs 563 km. "
+                            "Larangan cabang 48F lebih dari 6 km (batas_48f_km) tetap berlaku"),
+    "toleransi_slack_antar_m": (600, "DATA", "PDF 3.3: titik sambung di slack, closure atau ujung kabel existing didahulukan bila kabel "
+                                "barunya paling banyak sekian meter (atau 15 %) lebih panjang. Closure di tengah kabel tetap bisa "
+                                "dipasang (midspan access, panduan pabrikan), jadi menambah kabel berkilometer demi slack tidak "
+                                "sepadan; titik sambung tengah kabel diberi tanda Perlu dicek. Uji 213 desain: 300 m 421 km / 99 "
+                                "perlu dicek; 600 m 425 km / 92 (F/T sama tertinggi); 1000 m 434 km / 81; selalu 481 km / 60. "
+                                "6000 = ikuti PDF apa adanya"),
+    "slack_min_kabel_m": (150, "DATA", "Prioritas titik sambung di slack/closure/ujung kabel hanya berlaku bila kabel baru kandidat "
+                          "terbaik paling sedikit sekian meter. FDT yang menempel di kabel feeder disambung di dekat FDT, "
+                          "seperti desain nyata"),
+    "kelas_jalan_hindari": ("pedestrian,footway,path,steps,cycleway,bridleway,motorway,motorway_link", "KEBIJAKAN",
+                            "Kelas jalan OpenStreetMap yang tidak dipakai untuk jalur kabel baru (PDF: hindari footway dan "
+                            "motorway, dapat diatur; dipisah koma)"),
+    "kelas_seberang": ("trunk,trunk_link,primary,primary_link,secondary,secondary_link,tertiary,tertiary_link,residential,"
+                       "unclassified", "KEBIJAKAN", "Kelas jalan yang dihitung sebagai penyeberangan (tiang 9 m di kedua sisi). "
+                       "Jalan servis, gang (living_street) dan track tidak dihitung"),
     "koridor_min": (0.25, "KEBIJAKAN", "Cabang 48F baru dari closure 144 hanya dipakai bila paling sedikit sekian bagian jalurnya mengikuti "
                     "koridor kabel/tiang feeder itu sendiri (kesesuaian arah feeder terhadap cluster)"),
     "tap_slack_m": (10, "KEBIJAKAN", "Titik sambung dianggap berada di slack/closure existing bila jaraknya <= sekian meter (0-5 m kuat, "
@@ -165,7 +184,10 @@ LABEL_ID = {
     "pola_slack_144": "Panjang 144F mengikuti pola slack per feeder", "maks_144_m": "Panjang maksimum kabel 144F (m)",
     "closure_lubang_maks": "Lubang kabel per closure", "tulis_tiang": "Tulis tiang baru di New Infra",
     "tiang_m": "Jarak antar tiang baru (m)",
-    "batas_48f_km": "Jarak POP-FDT terjauh untuk cabang 48F (km)", "utamakan_aturan_6km": "Dahulukan kelompok tube sesuai aturan 6 km", "koridor_min": "Bagian jalur minimum di koridor feeder sendiri",
+    "batas_48f_km": "Jarak POP-FDT terjauh untuk cabang 48F (km)", "utamakan_aturan_6km": "Dahulukan kelompok tube sesuai aturan 6 km",
+    "toleransi_slack_antar_m": "Toleransi mendahulukan titik sambung di slack/ujung kabel existing (m)",
+    "slack_min_kabel_m": "Prioritas slack mulai dari panjang kabel baru (m)",
+    "kelas_jalan_hindari": "Kelas jalan yang dihindari", "kelas_seberang": "Kelas jalan untuk tiang 9 m penyeberangan", "koridor_min": "Bagian jalur minimum di koridor feeder sendiri",
     "tap_slack_m": "Jarak titik sambung ke slack/closure existing (m)",
     "tap_slack_toleransi_m": "Toleransi memindah titik sambung ke slack existing (m)", "hanger_m": "Jarak antar hanger (m)",
     "detour_lurus_maks_m": "Batas memutar hanya untuk cabang lebih pendek dari (m)",
@@ -186,7 +208,7 @@ LABEL_ID = {
     "splice_db": "Redaman per sambungan fusi (dB)", "margin_db": "Margin cadangan (dB)",
     "kelas_olt_db": "Batas redaman perangkat GPON (dB)", "distribusi_km": "Panjang distribusi ke pelanggan (km)",
 }
-JENIS_ID = {"STANDAR": "Standar", "DATA": "Dari desain nyata", "KEBIJAKAN": "Kebijakan", "KEBIJAKAN+DATA": "Kebijakan dan desain nyata"}
+JENIS_ID = {"PDF": "Aturan engineering (PDF 11-11-2026)", "STANDAR": "Standar", "DATA": "Dari desain nyata", "KEBIJAKAN": "Kebijakan", "KEBIJAKAN+DATA": "Kebijakan dan desain nyata"}
 
 PENJELASAN_EN = {
     "radius_cari_m": ("Search radius (m)", "How far around each FDT to look for an existing feeder. The longest branch "
@@ -210,12 +232,28 @@ PENJELASAN_EN = {
     "maks_144_m": ("Longest 144F cable (m)", "Maximum length of the 144F cable from the POP."),
     "closure_lubang_maks": ("Cable holes per closure", "One input plus at most five outputs. A full existing closure is "
                             "not used as a tap point."),
-    "tulis_tiang": ("Write new poles to the KMZ", "New-infra stretches get 7 m poles at the pole spacing and 9 m poles on "
-                    "both sides of a main-road crossing. These are proposed poles and a bill-of-materials tool reads them."),
+    "tulis_tiang": ("Write new pole points to the design KMZ", "Off by default: designers mark new-pole stretches with "
+                    "New Infra lines and never place pole points (0 of 46 designs), so pole points could be counted twice "
+                    "by a bill-of-materials tool. The pole estimate stays in the New Infra description and the review KMZ."),
     "tiang_m": ("New pole spacing (m)", "Distance between new poles on new-infra stretches."),
-    "utamakan_aturan_6km": ("Prefer the tube group of the 6 km rule", "Candidates whose tube group fits the 6 km rule "
+    "toleransi_slack_antar_m": ("Tolerance for preferring a tap at existing slack (m)", "Engineering rule 3.3: slack must come "
+                                "from the compilation and no new slack is made. A candidate whose tap is at an existing "
+                                "slack, closure or cable end is preferred when it passes every check and its new cable is "
+                                "at most this much longer (or 15 %). Default 600 m: a mid-span closure can still be built "
+                                "(manufacturers' mid-span access practice), so kilometres of extra cable to reach a slack "
+                                "are not worth it; mid-cable taps are flagged for review. 6000 = follow the rule literally."),
+    "slack_min_kabel_m": ("Slack preference from new cable length (m)", "The preference for a tap at an existing slack "
+                          "applies only when the best candidate's new cable is at least this long. An FDT right next to "
+                          "the feeder is joined near the FDT, as in real designs."),
+    "kelas_jalan_hindari": ("Road classes to avoid", "OpenStreetMap road classes not used for new cable routes "
+                            "(comma separated). The engineering rules ask to avoid footways and motorways."),
+    "kelas_seberang": ("Road classes for 9 m crossing poles", "Road classes counted as a crossing that needs 9 m poles on "
+                       "both sides. Service roads, living streets and tracks are not counted."),
+    "utamakan_aturan_6km": ("Prefer the tube group of the 6 km rule (engineering rules 3.1-3.2)", "Candidates whose tube group fits the 6 km rule "
                             "(up to 6 km: 48F branch T9-T12; beyond: 96F cable T1-T8) are preferred; others are used "
-                            "only when none fits."),
+                            "only when none fits. Default No: optical loss depends on route length, not fibre count "
+                            "(ITU-T G.652, G.984.2), and on 213 designs in 4 cities the F/T folder matched 54 % with No vs "
+                            "36 % with Yes, with 421 vs 563 km of new cable. A 48F branch over 6 km is still rejected."),
     "koridor_min": ("Minimum share of the route on the feeder's own corridor", "A new 48F branch from the closure 144 is "
                     "used only when at least this share of its route follows that feeder's own cables or poles "
                     "(direction fit of the feeder to the cluster)."),

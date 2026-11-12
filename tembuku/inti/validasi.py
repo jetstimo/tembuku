@@ -148,8 +148,12 @@ def _beda_bermakna(a, b):
 
 # ----------------------------------------------------------------------------- traksi & feeder
 RX_TRAKSI_LONGGAR = re.compile(
-    r"^\s*F\s*[-_ ]?\s*(\d{1,2})\s*[-_ ]\s*T\s*[-_ ]?\s*(\d{1,2}(?:\s*-\s*T?\d{1,2})?)\s*[-_ ]*(\d{6,12})?\s*[-_ ]*"
+    # nomor T boleh lebih dari satu: 'T7-T8', 'T1,T2,T3', 'T10,11', 'T3_T4_T5' (setelah '_' wajib huruf T agar ID cluster
+    # tidak ikut terbaca); (?!\d) mencegah dua digit pertama ID cluster dianggap nomor tube
+    r"^\s*F\s*[-_ ]?\s*(\d{1,2})\s*[-_ ]\s*T\s*[-_ ]?\s*"
+    r"(\d{1,2}(?!\d)(?:\s*[-,]\s*T?\s*\d{1,2}(?!\d)|\s*_\s*T\s*\d{1,2}(?!\d))*)\s*[-_ ]*(\d{6,12})?\s*[-_ ]*"
     r"(A\s*P\s*D\s*[-_ ]*\w+\s*[-_ ]*K\s*M\s*Z)?\s*[-_ ]*(.*)$", re.I)
+RX_APD_LONGGAR = re.compile(r"(?:^|[^A-Za-z])APD\s*[-_ ]*(?:Fe+d+e?r?|Distribusi|Distribution)(?![A-Za-z])", re.I)
 RX_FEEDER_LONGGAR = re.compile(r"^\s*F[e]{1,3}d{1,2}e?r\s*[-_ ]?\s*(\d{1,2})\s*$", re.I)
 
 
@@ -159,7 +163,7 @@ def baca_traksi(nama, temuan=None, berkas=""):
     if not m:
         return None
     kmz = m.group(4) or ""
-    if not kmz and not m.group(3):
+    if not kmz and not m.group(3) and not RX_APD_LONGGAR.search(m.group(5) or ""):
         return None                      # 'F2 T3' tanpa ID/APD terlalu umum untuk dianggap traksi
     kmz_up = re.sub(r"[\s_\-]+", " ", kmz.upper())
     if kmz and kmz_up not in ("APD FEEDER KMZ", "APD DISTRIBUSI KMZ"):
@@ -170,7 +174,7 @@ def baca_traksi(nama, temuan=None, berkas=""):
         if temuan is not None:
             temuan.tambah(PERBAIKI, "Nama folder", T("nama traksi '%s': '%s' dibaca '%s'",
                                                      "route folder '%s': '%s' read as '%s'") % (nama, kmz, best[0]), berkas)
-    t = re.sub(r"\s+", "", m.group(2)).upper().replace("T", "")
+    t = re.sub(r"\s+", "", m.group(2)).upper().replace("T", "").replace("_", ",")
     rest = (m.group(5) or "").strip(" _-")
     rest = re.sub(r"^APD\s*(Feeder|Distribusi|Distribution)\s*[-_ ]*", "", rest, flags=re.I)   # gaya 'APD Feeder_<area>'
     tgl = re.search(r"(\d{1,2})[-./](\d{1,2})[-./](\d{4})", rest)

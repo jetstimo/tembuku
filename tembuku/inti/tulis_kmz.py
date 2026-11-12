@@ -7,6 +7,7 @@ Closure, OTB, FDT, OLT, Keterangan Infra. Warna kabel = slide 16 'Format Warna K
 KMZ: doc.kml entri pertama, DEFLATE, UTF-8 tanpa BOM; semua teks di-escape (tidak ada HTML/JS dari input)."""
 import datetime
 import os
+import re
 import zipfile
 
 from . import geo, ikon, mesin, osm
@@ -38,6 +39,7 @@ TEMPLATE_FEEDER = (
     "OTB/Eksisting OTB", "FDT", "FDT/Eksisting FDT", "FDT/New FDT", "OLT", "Keterangan Infra",
     "Keterangan Infra/New Cable Galian") + tuple("Keterangan Infra/New Cable Galian/New Cable %dC UG" % c for c in CORE) + (
     "Keterangan Infra/Collo Tiang",) + tuple("Keterangan Infra/Collo Tiang/Colo Pole %dC" % c for c in CORE)
+FOLDER_NEW_INFRA = "Keterangan Infra/New Infra"     # di luar template, tetapi dipakai desainer (19 dari 46 traksi)
 # Ikon milik pengguna (opsional, dari folder 'ikon'; tidak ikut di plugin). Dikenali dari kata di nama berkasnya, apa pun
 # imbuhannya, lalu ditanam ke KMZ dengan nama netral: jenis -> (pola nama berkas, nama di KMZ, skala template).
 IKON_LOKAL = {"fdt": (r"^FDT\b", "fdt_lokal.png", 0.5), "pop": (r"^OLT\b|^POP\b", "olt_lokal.png", 1.2),
@@ -46,8 +48,9 @@ IKON_LOKAL = {"fdt": (r"^FDT\b", "fdt_lokal.png", 0.5), "pop": (r"^OLT\b|^POP\b"
               "closure_288": (r"^(CLOSURE|CL)[ _-]*288\b", "closure_288_lokal.png", 0.8),
               "otb": (r"^OTB\b", "otb_lokal.png", 0.8), "slack": (r"^(SPARE|SLACK)\b", "slack_lokal.png", 0.8),
               "tiang6": (r"^6M\b", "tiang6_lokal.png", 0.5),
-              "tiang7": (r"^(ICONFTTH[ -]*7M|7M|POLE 7)\b", "tiang7_lokal.png", 0.5),
-              "tiang9": (r"^(ICONFTTH[ -]*9M|9M|POLE 9)\b", "tiang9_lokal.png", 0.5)}
+              # template APD: New Tiang 9m = ICONFTTH-9m.png; pola dicoba berurutan (yang pertama cocok dipakai)
+              "tiang7": ((r"^ICONFTTH[ -]*7M\b", r"^7M\b", r"^POLE 7\b"), "tiang7_lokal.png", 0.5),
+              "tiang9": ((r"^ICONFTTH[ -]*9M\b", r"^9M\b", r"^POLE 9\b"), "tiang9_lokal.png", 0.5)}
 
 
 def pilih_ikon(lokal):
@@ -55,8 +58,10 @@ def pilih_ikon(lokal):
     import re
     out = {}
     for jenis, (pola, netral, skala) in IKON_LOKAL.items():
-        for nama in sorted(lokal or {}):
-            if re.search(pola, os.path.splitext(nama)[0].upper().replace("_", " ")):
+        for p in (pola if isinstance(pola, tuple) else (pola,)):
+            nama = next((n for n in sorted(lokal or {}) if re.search(p, os.path.splitext(n)[0].upper().replace("_", " "))),
+                        None)
+            if nama:
                 out[jenis] = (netral, skala, lokal[nama])
                 break
     return out
@@ -68,6 +73,11 @@ WARNA_INFRA = {"TIANG_NASIONAL": "b3ffff00", "TIANG_COMPILE": "b3ffaa55", "NEW_I
 IKON = {k: "files/%s.png" % k for k in ikon.BENTUK}
 WARNA_IKON = {"slack": "ff00ffff", "closure": "ff00aaff", "otb": "ffff8800", "fdt": "ff00ffff",
               "pop": "ff0000ff", "tap": "ffff00ff", "tiang": "ff00ff55"}
+# Ikon standar Google Earth menurut template APD (Resume Template APD Feeder 29-12-2025): New Hanger 'forbidden' skala
+# 0,8 (juga dipakai 321 dari 321 titik hanger di 4 compile) dan OLT 'homegardenbusiness' skala 1,2.
+IKON_APD = {"hanger": ("http://maps.google.com/mapfiles/kml/shapes/forbidden.png", 0.8),
+            "olt": ("http://maps.google.com/mapfiles/kml/shapes/homegardenbusiness.png", 1.2)}
+WARNA_EKSISTING = "ff00ffff"            # objek eksisting di compile diberi warna ikon ini (closure, FDT)
 
 
 def _c(ll):
@@ -85,15 +95,23 @@ class _W(object):
         self.lokal = {}          # jenis ikon -> id style ikon pengguna (bila pengguna menyediakannya)
         self.ikon_pakai = {}
 
-    def ik(self, jenis, core=None):
-        """Style ikon: ikon organisasi bila ada (closure mengikuti kapasitas seperti template), selain itu bawaan."""
-        if jenis == "closure" and core:
+    def ik(self, jenis, core=None, eks=False):
+        """Style ikon seperti di compile desainer: hanger 'forbidden', OLT 'ranger_station'; closure/FDT/OTB/tiang memakai
+        ikon organisasi bila ada (closure mengikuti kapasitas seperti template), selain itu ikon bawaan Tembuku.
+        eks=True: varian objek eksisting (warna ikon seperti di compile)."""
+        if jenis in ("slack", "hanger"):
+            return "apd_hanger"
+        if jenis == "pop":
+            return "apd_olt"
+        st = None
+        if jenis == "closure" and core:      # template: 12-48 'Closure 48', 96-144 'Closure 96', 288 'CL_288'
             j = "closure_288" if core >= 288 else ("closure_kecil" if core <= 48 else "closure")
-            if j in self.lokal:
-                return self.lokal[j]
-        if jenis.startswith("tiang"):
-            return self.lokal.get(jenis, "ikon_tiang")
-        return self.lokal.get(jenis, "ikon_" + jenis)
+            st = self.lokal.get(j)
+        if st is None and jenis.startswith("tiang"):
+            st = self.lokal.get(jenis, "ikon_tiang")
+        if st is None:
+            st = self.lokal.get(jenis, "ikon_" + jenis)
+        return st + "_eks" if eks and st.startswith("lokal_") else st
 
     def a(self, s):
         self.o.append(s)
@@ -103,10 +121,14 @@ class _W(object):
         isi()
         self.a("</Folder>")
 
-    def garis(self, nama, ll, style, desc=""):
-        self.a("<Placemark><name>%s</name>%s<styleUrl>#%s</styleUrl><LineString><tessellate>1</tessellate>"
+    def garis(self, nama, ll, style, desc="", data=None):
+        ed = ""
+        if data:
+            ed = "<ExtendedData>%s</ExtendedData>" % "".join(
+                '<Data name="%s"><value>%s</value></Data>' % (escape(str(k)), escape(str(v))) for k, v in data.items())
+        self.a("<Placemark><name>%s</name>%s<styleUrl>#%s</styleUrl>%s<LineString><tessellate>1</tessellate>"
                "<coordinates>%s</coordinates></LineString></Placemark>"
-               % (escape(nama), "<description>%s</description>" % escape(desc) if desc else "", style, _c(ll)))
+               % (escape(nama), "<description>%s</description>" % escape(desc) if desc else "", style, ed, _c(ll)))
 
     def titik(self, nama, p, style, desc="", data=None, persis=False):
         ed = ""
@@ -131,13 +153,18 @@ def _styles(w, lokal=None):
     for k, href in IKON.items():
         w.a('<Style id="ikon_%s"><IconStyle><color>%s</color><scale>%s</scale><Icon><href>%s</href></Icon>'
             '</IconStyle><LabelStyle><scale>0.8</scale></LabelStyle></Style>' % (k, WARNA_IKON[k], SKALA[k], href))
-    for c, col in WARNA_CORE.items():                 # garis Colo Pole: warna kapasitas kabelnya, lebar template
+    for c, col in WARNA_CORE.items():                 # garis Colo Pole: warna kapasitas kabelnya, lebar 3 (template APD)
         w.a('<Style id="kolo%d"><LineStyle><color>%s</color><width>%d</width></LineStyle></Style>'
             % (c, col, LEBAR_KABEL))
+    for k, (href, skala) in IKON_APD.items():
+        w.a('<Style id="apd_%s"><IconStyle><scale>%s</scale><Icon><href>%s</href></Icon></IconStyle>'
+            '<LabelStyle><scale>0.8</scale></LabelStyle></Style>' % (k, skala, href))
     w.ikon_pakai = pilih_ikon(lokal)
     for k, (netral, skala, _isi) in w.ikon_pakai.items():     # ikon pengguna: tanpa pewarnaan, skala template
         w.a('<Style id="lokal_%s"><IconStyle><scale>%s</scale><Icon><href>files/%s</href></Icon></IconStyle>'
             '<LabelStyle><scale>0.8</scale></LabelStyle></Style>' % (k, skala, netral))
+        w.a('<Style id="lokal_%s_eks"><IconStyle><color>%s</color><scale>%s</scale><Icon><href>files/%s</href></Icon>'
+            '</IconStyle><LabelStyle><scale>0.8</scale></LabelStyle></Style>' % (k, WARNA_EKSISTING, skala, netral))
         w.lokal[k] = "lokal_" + k
 
 
@@ -215,25 +242,20 @@ def _isi_traksi(w, h, prm, ke_ll):
                 sisa_stub = max(0.0, sisa_stub - pjg)
     tgt = sel["rute"]["titik"][0] if sel else None
     tap_ll = ke_ll(tgt) if tgt is not None else None
-
-    def cable():
-        def udara():
-            for c in CORE:
-                w.folder("New Cable %dC" % c, lambda c=c: [w.garis("%dC" % c, ll, "kabel%d" % c,
-                                                                      "Kabel baru usulan Tembuku") for ll in kab_baru.get(c, [])])
-        w.folder("New Cable Aerial/Udara", udara)
-
-        def colo():
-            if sel and sel.get("colo_xy"):
-                w.garis("Colo Cable", [ke_ll(p) for p in sel["colo_xy"]], "infra_COLO_CABLE",
-                        "Feeder yang dipakai dari POP ke titik sambung: %s %s (%s)" % (
-                            sel["label_colo"], sel["nama"], sel["ket_kapasitas"]))
-        w.folder("Collo Cable", colo)
-        w.folder("UG Utilities", lambda: (w.folder("Manhole", lambda: None), w.folder("Handhole", lambda: None)))
-    w.folder("Cable", cable)
-    # tiang baru hanya di ruas New Infra: 9 m di kedua sisi penyeberangan jalan utama, 7 m tiap tiang_m di antaranya
+    # PDF 3.3: closure baru tepat di koordinat slack/closure existing, tidak digeser; kabel baru dimulai dari titik itu
+    if tap_ll and ts and ts.get("jenis") in ("slack", "closure") and ts.get("ll"):
+        asli = (float(ts["ll"][0]), float(ts["ll"][1]))
+        if geo.haversine(asli, tap_ll) > 0.3:
+            for c_, daftar in kab_baru.items():
+                for ll in daftar:
+                    if ll and geo.haversine(ll[0], tap_ll) < 0.3:
+                        ll.insert(0, asli)
+        tap_ll = asli
+    # tiang baru hanya di ruas New Infra (PDF 3.4): 9 m di kedua sisi penyeberangan jalan (ditulis ke folder Tiang 9
+    # Meter), 7 m sebagai tiang virtual tiap tiang_m (jumlahnya di metadata kabel; titiknya ditulis hanya bila
+    # tulis_tiang aktif - desainer tidak menaruh titik tiang 7 m, 0 dari 46 traksi)
     tiang = {6: [], 7: [], 9: []}
-    if rute and prm.get("tulis_tiang", True) and float(prm.get("tiang_m") or 0) >= 10:
+    if rute and float(prm.get("tiang_m") or 0) >= 10:
         for a, b in rute.get("seberang") or []:
             tiang[9] += [ke_ll(a), ke_ll(b)]
         for kelas, _core, ll, _ref in infra:
@@ -244,12 +266,45 @@ def _isi_traksi(w, h, prm, ke_ll):
                 if all(geo.haversine(q, p9) > 12.0 for p9 in tiang[9]) and \
                         all(geo.haversine(q, p7) > 0.5 * float(prm["tiang_m"]) for p7 in tiang[7]):
                     tiang[7].append(q)
+    # metadata keputusan & audit rute digabung ke placemark kabel (PDF 8), ditulis apa adanya untuk aplikasi BOM/review
+    meta = {"Keputusan": str(mesin.nama_keputusan(h["keputusan"])), "Folder F/T": "F%s_T%s" % (n.get("feeder"), n.get("t")),
+            "Tube": ("T%s" % n.get("t")) if n.get("t") else "-", "Kelompok tube": n.get("kelompok") or "-",
+            "POP": pop["nama"] if pop else "-", "FDT": f["kode"]}
+    if sel:
+        meta.update({"Feeder yang dipakai": sel.get("nama") or sel.get("id"), "Kabel baru (m)": sel.get("kabel_baru_m"),
+                     "Menumpang tiang existing (%)": round(100 * (sel.get("colo_rasio") or 0)),
+                     "Titik sambung": str(mesin.label_tap(ts)) if ts else "titik baru di tengah kabel (perlu dicek)",
+                     "Redaman (dB)": (sel.get("budget") or {}).get("total_db", "-"),
+                     "Jalur POP-FDT (m)": sel.get("jalur_serat_m")})
+    elif rute:
+        meta.update({"Kabel baru (m)": round(rute.get("panjang_m", 0))})
+    meta["Tiang baru 7 m (perkiraan)"] = len(tiang[7])
+    meta["Tiang baru 9 m penyeberangan"] = len(tiang[9])
+    meta["Status"] = "Usulan Tembuku - wajib ditinjau desainer"
+
+    def cable():
+        def udara():
+            for c in CORE:
+                w.folder("New Cable %dC" % c, lambda c=c: [w.garis("%dC" % c, ll, "kabel%d" % c,
+                                                                      "Kabel baru usulan Tembuku", meta)
+                                                              for ll in kab_baru.get(c, [])])
+        w.folder("New Cable Aerial/Udara", udara)
+
+        def colo():
+            if sel and sel.get("colo_xy"):
+                w.garis("Colo Cable", [ke_ll(p) for p in sel["colo_xy"]], "infra_COLO_CABLE",
+                        "Feeder yang dipakai dari POP ke titik sambung: %s %s (%s)" % (
+                            sel["label_colo"], sel["nama"], sel["ket_kapasitas"]))
+        w.folder("Collo Cable", colo)
+        w.folder("UG Utilities", lambda: (w.folder("Manhole", lambda: None), w.folder("Handhole", lambda: None)))
+    w.folder("Cable", cable)
     for m in (6, 7, 9):
         w.folder("Tiang %d Meter" % m, lambda m=m: (
             w.folder("New Tiang %d Meter" % m, lambda: [w.titik("Tiang %d" % m, q, w.ik("tiang%d" % m),
                                                               "Tiang baru %d m (usulan)%s" % (
                                                                   m, " - penyeberangan jalan" if m == 9 else ""))
-                                                      for q in tiang[m]]),
+                                                      for q in tiang[m]] if (m == 9 or prm.get("tulis_tiang", False))
+                                                      else None),
             w.folder("Eksisting Tiang %d Meter" % m, lambda: None)))
 
     def hanger():
@@ -259,8 +314,13 @@ def _isi_traksi(w, h, prm, ke_ll):
             # hanger/slack tiap hanger_m dari awal penarikan kabel baru (aturan 300 m)
             langkah = float(prm.get("hanger_m") or 0)
             if rute and langkah >= 50:
+                semua_tiang = tiang[7] + tiang[9]
                 for q, jarak in _titik_tiap([ke_ll(p) for p in rute["titik"]], langkah):
-                    w.titik("Slack", q, w.ik("slack"), "Hanger/slack di %d m dari awal kabel baru" % jarak)
+                    # aturan: hanger disesuaikan ke tiang terdekat (tiang baru usulan dalam 30 m)
+                    dekat = min(semua_tiang, key=lambda t: geo.haversine(q, t), default=None)
+                    if dekat is not None and geo.haversine(q, dekat) <= 30.0:
+                        q = dekat
+                    w.titik("Slack", q, w.ik("slack"), "Hanger di sekitar %d m dari awal kabel baru" % jarak)
             w.titik("Slack", f["ll"], w.ik("slack"), "Slack %d m di FDT" % prm["slack_m"])
         w.folder("New Hanger", nh)
         w.folder("Eksisting Hanger", lambda: None)
@@ -272,14 +332,18 @@ def _isi_traksi(w, h, prm, ke_ll):
                 def isi(c=c):
                     if tap_ll and c == core_tap and not (ts and ts["jenis"] == "closure"):
                         w.titik("Closure %d" % c, tap_ll, w.ik("closure", c),
-                                "Closure baru di titik sambung (tap)" + (", tepat di slack existing" if ts else ""))
+                                "Closure baru di titik sambung" + (
+                                    ", di ujung kabel yang sudah ada" if ts and ts.get("jenis") == "ujung" else
+                                    ", tepat di slack yang sudah ada" if ts else
+                                    "; belum ada slack di sini: pastikan ada cadangan kabel"))
                     if baru and c == 144 and kab_baru.get(144):
                         w.titik("Closure 144", kab_baru[144][0][-1], w.ik("closure", 144), "Slack 144: pastikan tidak berimpit "
                                 "dengan slack feeder lain")
                 w.folder("New Closure %d" % c, isi)
         w.folder("New Closure", nc)
-        w.folder("Eksisting Closure", lambda: (w.titik(ts["nama"] or "Ext Closure", ts["ll"], w.ik("closure", ts.get("core") or core_tap),
-                                                       "Closure existing yang dipakai sebagai titik sambung (tap)")
+        w.folder("Eksisting Closure", lambda: (w.titik(ts["nama"] or "Ext Closure", ts["ll"],
+                                                       w.ik("closure", ts.get("core") or core_tap, eks=True),
+                                                       "Closure yang sudah ada, dipakai sebagai titik sambung")
                                                if tap_ll and ts and ts["jenis"] == "closure" else None))
     w.folder("Closure", closure)
 
@@ -304,7 +368,7 @@ def _isi_traksi(w, h, prm, ke_ll):
             if kk and kk not in data and kk.upper() not in ("LAT", "LONG", "NAME", "FDT FAT CODE") and len(str(vv)) <= 200:
                 data[kk] = vv if str(vv).strip() else "-"
         data["LAT"], data["LONG"] = repr(float(f["ll"][1])), repr(float(f["ll"][0]))
-        w.folder("Eksisting FDT", lambda: (w.titik(f["kode"], f["ll"], w.ik("fdt"), "", data, persis=True)
+        w.folder("Eksisting FDT", lambda: (w.titik(f["kode"], f["ll"], w.ik("fdt", eks=True), "", data, persis=True)
                                            if f.get("status") == "Eksisting" else None))
         w.folder("New FDT", lambda: (w.titik(f["kode"], f["ll"], w.ik("fdt"), "", data, persis=True)
                                      if f.get("status") != "Eksisting" else None))
@@ -315,20 +379,31 @@ def _isi_traksi(w, h, prm, ke_ll):
     def ket():
         w.folder("New Cable Galian", lambda: [w.folder("New Cable %dC UG" % c, lambda: None) for c in CORE])
 
-        def tiang():
+        pemilik = (rute or {}).get("pemilik") or {}
+
+        def tiang_colo():
+            # template APD: warna kapasitas kabelnya, lebar 3; nama 'Colo Pole FTTH' untuk tiang feeder sendiri dan
+            # 'Colo Pole <pemilik>' untuk jaringan lain (seperti penamaan desainer)
             for c in CORE:
                 def isi(c=c):
                     for kelas, core, ll, ref in infra:
                         if core == c and kelas in ("TIANG_NASIONAL", "TIANG_COMPILE"):
-                            w.garis(mesin.label_kelas(kelas), ll, "kolo%d" % c, ref)
+                            nm = mesin.label_kelas(kelas)
+                            if kelas == "TIANG_NASIONAL" and str(pemilik.get(ref) or "").strip() not in ("", "0", "-"):
+                                nm = "Colo Pole %s" % str(pemilik[ref]).strip().upper()
+                            w.garis(nm, ll, "kolo%d" % c, "")
                 w.folder("Colo Pole %dC" % c, isi)
-        w.folder("Collo Tiang", tiang)
+        w.folder("Collo Tiang", tiang_colo)
     w.folder("Keterangan Infra", ket)
-    return bantu, [ll for kelas, _c, ll, _r in infra if kelas == "NEW_INFRA"]
+    return bantu, [ll for kelas, _c, ll, _r in infra if kelas == "NEW_INFRA"], tiang
 
 
-def _analisis_folder(w, h, ke_ll, bantu, infra_baru=()):
+def _analisis_folder(w, h, ke_ll, bantu, infra_baru=(), tiang=None):
     def isi():
+        for m_, daftar in sorted((tiang or {}).items()):
+            for q in daftar:
+                w.titik("Tiang %d m (usulan)" % m_, q, w.ik("tiang%d" % m_),
+                        "Perkiraan tiang baru %d m%s" % (m_, " di penyeberangan jalan" if m_ == 9 else ""))
         for ll in infra_baru:
             if ll not in bantu:
                 w.garis("Butuh tiang atau jalur baru", ll, "infra_NEW_INFRA",
@@ -354,21 +429,26 @@ def periksa_template(path):
     with zipfile.ZipFile(path) as zf:
         kml = zf.read("doc.kml").decode("utf-8")
         berkas = set(zf.namelist())
-    masalah, jalur, traksi, kini = [], [], {}, None
+    masalah, jalur, traksi, kini, dalam = [], [], {}, None, None
     for m in re.finditer(r"<Folder><name>([^<]*)</name>|</Folder>", kml):
         if m.group(1) is None:
             jalur.pop()
+            if dalam is not None and len(jalur) < dalam:
+                dalam = None
             continue
         jalur.append(m.group(1).replace("&amp;", "&"))
-        if "Feeder" in jalur[3:4] and len(jalur) > 4:
-            traksi[kini].append("/".join(jalur[4:]))
-        elif len(jalur) == 4 and jalur[3] == "Feeder":
-            kini = "%s #%d" % (jalur[2], len(traksi) + 1)        # nama traksi bisa kembar: tiap kemunculan diperiksa
+        if dalam is not None and len(jalur) > dalam:
+            traksi[kini].append("/".join(jalur[dalam:]))
+        elif jalur[-1] == "Feeder" and len(jalur) >= 2 and re.match(r"^F\d+[_-]?T", jalur[-2], re.I):
+            dalam = len(jalur)                                    # kedalaman bebas: dengan/tanpa folder POP di atasnya
+            kini = "%s #%d" % (jalur[-2], len(traksi) + 1)        # nama traksi bisa kembar: tiap kemunculan diperiksa
             traksi[kini] = []
     if not traksi:
         masalah.append("tidak ada folder Feeder di dalam folder traksi")
     for t, ada in traksi.items():
         inti = list(ada)
+        if inti[-1:] == [FOLDER_NEW_INFRA]:      # tambahan yang juga dipakai desainer, hanya bila ada ruas New Infra
+            inti = inti[:-1]
         if tuple(inti) != TEMPLATE_FEEDER:
             kurang = [x for x in TEMPLATE_FEEDER if x not in inti]
             lebih = [x for x in inti if x not in TEMPLATE_FEEDER]
@@ -422,15 +502,16 @@ def tulis(hasil, path, prm, judul=None, ikon_lokal=None, analisis=False):
                     for h in hs:
                         L = geo.Lokal(*h["lokal"])
                         if analisis:
-                            bantu, infra_baru = _isi_traksi(_W(), h, prm, L.balik)
-                            _analisis_folder(w, h, L.balik, bantu, infra_baru)
+                            bantu, infra_baru, tiang = _isi_traksi(_W(), h, prm, L.balik)
+                            _analisis_folder(w, h, L.balik, bantu, infra_baru, tiang)
                             continue
 
                         def tr(h=h, L=L):
                             w.folder("Feeder", lambda: _isi_traksi(w, h, prm, L.balik))
                         w.folder(nama_traksi(h, prm), tr)
                 w.folder("Feeder %d" % fn, fdr_isi)
-        w.folder(popf or "POP", pop_isi)
+        # satu folder POP di akar, sama dengan compile (POP / Feeder N / traksi) - tanpa akar tambahan, tanpa ".kmz"
+        w.folder(re.sub(r"\.km[lz]$", "", (popf or "POP").strip(), flags=re.I) or "POP", pop_isi)
     w.a("</Document></kml>")
     data = "".join(w.o).encode("utf-8")
     tmp = path + ".tmp"

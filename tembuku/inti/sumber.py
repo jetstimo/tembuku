@@ -68,8 +68,10 @@ def _tanda_fdt(pm):
                                                           not atribut.RX_KATA_AKSESORI.search(folder)))
 RX_FDT = re.compile(r"^[A-Z]{2,4}\d?-[A-Z]{2,4}\d{1,3}-H\d{1,3}$")
 RX_FDT_LONGGAR = re.compile(r"^[A-Za-z]{2,4}\d[\s_\-.]*[A-Za-z]{2,4}\d{1,2}[\s_\-.]*[Hh]\d{1,2}$")
-RX_CLUSTER = re.compile(r"(\d{9,12})_APD\s+(?:Distribusi|Feeder|Distribution)\s+KMZ_(.+?)(?:_\d{2}-\d{2}-\d{4}.*)?"
-                        r"(?:\.kmz)?$", re.I)
+# '<ID>_APD Feeder KMZ_<area>_<tgl>' dan juga '<ID>_APD Feeder_<area>_<tgl>' (tanpa KMZ, dipakai desainer Bengkulu):
+# tanpa ini nama area menjadi 'APD Feeder_<area>' dan nama folder hasil berulang ('APD Feeder KMZ_APD Feeder_...')
+RX_CLUSTER = re.compile(r"(\d{9,12})_APD[\s_]+(?:Distribusi|Feeder|Distribution)(?:[\s_]+KMZ)?_(.+?)"
+                        r"(?:_\d{2}-\d{2}-\d{4}.*)?(?:\.kmz)?$", re.I)
 RX_TGL = re.compile(r"_(\d{2}-\d{2}-\d{4})")
 
 

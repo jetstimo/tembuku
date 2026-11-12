@@ -60,6 +60,24 @@ def terdekat_di_garis(p, xy):
     return best
 
 
+def dekat_garis(p, xy, tol):
+    """True bila p berjarak <= tol dari polyline xy (sama dengan terdekat_di_garis(p, xy)[0] <= tol, tetapi berhenti
+    di segmen pertama yang cukup dekat dan melewati segmen yang kotaknya jauh)."""
+    px, py, t2 = p[0], p[1], tol * tol
+    for i in range(len(xy) - 1):
+        a, b = xy[i], xy[i + 1]
+        if (px < a[0] - tol and px < b[0] - tol) or (px > a[0] + tol and px > b[0] + tol) or \
+                (py < a[1] - tol and py < b[1] - tol) or (py > a[1] + tol and py > b[1] + tol):
+            continue
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        l2 = dx * dx + dy * dy
+        t = 0.0 if l2 == 0 else max(0.0, min(1.0, ((px - a[0]) * dx + (py - a[1]) * dy) / l2))
+        ex, ey = px - (a[0] + t * dx), py - (a[1] + t * dy)
+        if ex * ex + ey * ey <= t2:
+            return True
+    return False
+
+
 def satuan(a, b):
     v = (b[0] - a[0], b[1] - a[1])
     n = math.hypot(v[0], v[1]) or 1.0

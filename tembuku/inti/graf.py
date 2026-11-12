@@ -44,14 +44,20 @@ class Graf(object):
         return ids
 
     def dekat(self, p, r, saring=None):
-        cx, cy, n = int(p[0] // self.sel), int(p[1] // self.sel), int(math.ceil(r / self.sel))
+        px, py = p[0], p[1]
+        cx, cy, n = int(px // self.sel), int(py // self.sel), int(math.ceil(r / self.sel))
         out = []
+        xy, grid, r2 = self.xy, self._grid, r * r
         for gx in range(cx - n, cx + n + 1):
             for gy in range(cy - n, cy + n + 1):
-                for i in self._grid.get((gx, gy), ()):
-                    d = math.hypot(self.xy[i][0] - p[0], self.xy[i][1] - p[1])
-                    if d <= r and (saring is None or saring(i)):
-                        out.append((d, i))
+                sel = grid.get((gx, gy))
+                if not sel:
+                    continue
+                for i in sel:
+                    q = xy[i]
+                    dx, dy = q[0] - px, q[1] - py
+                    if dx * dx + dy * dy <= r2 and (saring is None or saring(i)):   # cek jarak dulu, saring belakangan
+                        out.append((math.hypot(dx, dy), i))
         out.sort()
         return out
 
