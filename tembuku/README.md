@@ -41,6 +41,16 @@ Esri World Imagery (0.3-0.5 m, your own API key) with the capture date at the ma
 than 12 months. The HTML report always shows OpenStreetMap road lines (offline) and, if you allow it, the same satellite layers.
 **Help:** *Vector → Tembuku → Help and Quick Guide* opens an offline guide with a glossary.
 
+## New in 1.4.0 (engineering rules of 11 Nov 2026)
+- **Tube book per feeder, from the compilation folders.** One feeder = one 144-fibre trunk = 12 tubes. The T number of a
+  folder `F<n>_T<k>` is the tube used. T1-T8 go through the 96-fibre cable, T9-T12 through 48-fibre branches from the
+  closure 144 at the POP. Tembuku proposes the lowest free tube of the group that fits the 6 km rule.
+- **The cable inventory is a pole-route reference only**; it no longer gives tubes (changeable under *Advanced*).
+- **New 48-fibre branch from the closure 144** of an existing feeder is a candidate when its route follows that feeder's
+  own corridor; a new feeder is proposed only when no existing feeder qualifies.
+- **Tap at an existing slack or closure** of the feeder where possible; hanger/slack points every 300 m; routes follow roads.
+- The steps below still apply; where they differ, this section wins.
+
 ## How it decides (details in [DASAR_KEPUTUSAN.md](DASAR_KEPUTUSAN.md))
 1. Only fibre-to-the-home feeders of at least 48 fibres may give fibres; other cables are existing pole routes only.
 2. Free tubes: inventory spare fibres ÷ 12; for on-going feeders, tubes minus the FDTs they already serve (1 FDT = 1 tube).

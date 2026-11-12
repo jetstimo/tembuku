@@ -5,6 +5,24 @@ Values are of three kinds: **standard** (from a current international standard o
 (measured on approved real designs) and **policy** (an engineering choice your team should confirm). Every value can be
 changed under *Advanced* in the Tembuku window.
 
+## 0. Version 1.4.0: engineering rules of 11 November 2026 (these override older text below where they differ)
+| Rule | How Tembuku applies it |
+|---|---|
+| The compilation is the only capacity source; the cable inventory is a corridor reference | `produk_feeder` is empty by default: inventory cables are existing pole routes only |
+| Folder hierarchy gives the feeder identity; no geometric tracing between folders | Tube use is read from the folders `F<n>_T<k>` per POP and feeder (the "tube book"); overlapping pole lines of other feeders are ignored |
+| 144F trunk: T1-T8 for the 96F branch, T9-T12 for 48F branches; one FDT = one tube; lowest free number | `tube_kelompok_96`, `tube_kelompok_48`; the proposed tube becomes the T number and the FDT fields F (SP1) / T (SP1) |
+| Up to 6 km POP-to-FDT along the real route: 48F; beyond: 96F | `batas_48f_km`, `utamakan_aturan_6km`: candidates of the fitting group come first; a 48F path over 6 km is rejected |
+| Feeder direction must fit the cluster | Direction at the tap (`cos_arah_min`); a new 48F branch from the closure 144 must follow the feeder's own corridor (`koridor_min`, 25 %) |
+| Use existing slack; new closure exactly at the slack; 0-5 m strong, 5-10 m review | `tap_slack_m`, `tap_slack_toleransi_m`; an existing closure is reused |
+| Hanger every 300 m from the start of the pull; OTB Existing per feeder | `hanger_m`; written to New Hanger and Eksisting OTB |
+| OpenStreetMap roads for new infrastructure | Helper lines cost 4x when road data exists (`faktor_bebas`) |
+
+Case study Bengkulu POP 4, FDT BGL1-LAT01-H07 (designer: F2_T9, new 48C 3,706 m from the closure 144): version 1.3.2 chose
+an inventory cable and F1_T1 with a 347 m straight line (8 % route match); version 1.4.0 gives F2_T9, a new 48C of 3,117 m
+from the closure 144 of feeder 2, 80 % of the route within 20 m of the designer's cable. Leave-one-out on the 19 folders of
+the same compilation: equal decisions 12 -> 15, equal F/T folders 4 -> 10, median tap offset 1,545 m -> 154 m. Feeder 4
+qualifies equally (shared pole line) and is listed as an equal alternative; the lowest feeder number is used.
+
 ## 1. Workflow (feeder design procedure, steps 1-6)
 | Step | Question | How Tembuku answers it |
 |---|---|---|

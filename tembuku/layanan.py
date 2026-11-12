@@ -346,6 +346,14 @@ class Sesi(object):
             try:
                 self.data.kecuali = set(f["_uji"]["kecuali"]) if f.get("_uji") else set()
                 self.hasil.append(mesin.analisis(f, self.data, self.prm))
+                if not f.get("_uji"):
+                    # FDT berikutnya dalam proses yang sama melihat tube & kabel yang baru diusulkan (tidak dobel)
+                    try:
+                        mesin.komit(self.hasil[-1], self.data, self.prm)
+                    except Exception as e:
+                        self.temuan.tambah(V.INFO, "Proses", T("usulan FDT %s tidak bisa dicatat ke buku tube (%s)",
+                                                               "the proposal for FDT %s could not be added to the tube "
+                                                               "book (%s)") % (f["kode"], str(e)[:100]))
                 if f.get("_uji"):
                     from . import uji_akurasi
                     self.nilai_uji.append(uji_akurasi.nilai(self.hasil[-1]))
@@ -489,7 +497,7 @@ class Sesi(object):
             w.writerow(["FDT", "Keputusan", "Perlu ditinjau", "Folder compile (F/T)", "Feeder yang dipakai", "Jenis colo",
                         "Sisa tube", "Kabel baru (m)", "Garis bantu yang harus digambar ulang (m)",
                         "Feeder baru dari POP (m)", "Jalur lewat feeder dibanding feeder baru (x)", "Redaman sinyal (dB)",
-                        "POP", "Alasan", "Peringatan", "Berkas KMZ desain"])
+                        "POP", "Alasan", "Peringatan", "Berkas KMZ desain", "Tube (kelompok)", "Titik sambung di"])
             for h, pth in zip(hasil, out["kmz"]):
                 k = h.get("terpilih") or {}
                 fb = h.get("feeder_baru") or {}
@@ -503,7 +511,32 @@ class Sesi(object):
                             round(rute.get("bantu_m", 0)) if rute else "", round(fb["panjang_m"]) if fb else "",
                             k.get("rasio_jalur", ""), (k.get("budget") or {}).get("total_db", ""),
                             h["pop"]["nama"] if h["pop"] else "", " | ".join(h["alasan"]), " | ".join(h["peringatan"]),
-                            os.path.basename(pth)])
+                            os.path.basename(pth),
+                            ("T%s (%s)" % (n["t"], n.get("kelompok") or "-")) if n.get("t") else "",
+                            ("%s existing '%s'" % (k["tap_slack"]["jenis"], k["tap_slack"]["nama"])) if k.get("tap_slack")
+                            else ("titik baru di kabel" if k else "")])
+        # buku tube per feeder (audit): tube terpakai & kosong per kelompok, dari hierarki folder compile + hasil ini
+        out["tube"] = os.path.join(folder_keluar, "TEMBUKU_BUKU_TUBE_%s.csv" % tgl)
+        with open(out["tube"], "w", encoding="utf-8-sig", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow(["POP", "Feeder", "Jumlah FDT", "Tube terpakai", "Kosong kelompok 96F", "Kosong kelompok 48F",
+                        "Status", "Usulan Tembuku pada proses ini"])
+            g96, g48 = mesin.kelompok_tube(self.prm)
+            usul = {}
+            for h in hasil:
+                n = h["penomoran"]
+                if h["keputusan"] != "PERLU_MANUAL" and h.get("pop"):
+                    usul.setdefault((sumber.kunci_pop(h["pop"]["nama"]), int(n["feeder"])), []).append(
+                        "%s -> T%s" % (h["fdt"]["kode"], n["t"]))
+            for p in self.data.pops:
+                led = self.data.ledger(p["nama"])
+                kp = sumber.kunci_pop(p["nama"])
+                for fe in sorted(set(led) | set(f for (pp, f) in usul if pp == kp)):
+                    e = led.get(fe, {"tube": set(), "fdt": set()})
+                    k96, k48 = sorted(g96 - e["tube"]), sorted(g48 - e["tube"])
+                    w.writerow([p["nama"], fe, len(e["fdt"]), mesin._teks_tube(e["tube"]), mesin._teks_tube(k96),
+                                mesin._teks_tube(k48), "PENUH" if not k96 and not k48 else "masih ada tube kosong",
+                                "; ".join(usul.get((kp, fe), []))])
         out["temuan"] = os.path.join(folder_keluar, "TEMBUKU_PEMERIKSAAN_INPUT_%s.txt" % tgl)
         with open(out["temuan"], "w", encoding="utf-8") as fh:
             fh.write("Tembuku - pemeriksaan input %s\n\n%s\n" % (meta["waktu"], self.temuan.teks() or "Tidak ada temuan."))
