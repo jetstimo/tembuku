@@ -44,7 +44,10 @@ IKON_LOKAL = {"fdt": (r"^FDT\b", "fdt_lokal.png", 0.5), "pop": (r"^OLT\b|^POP\b"
               "closure": (r"^(CLOSURE|CL)[ _-]*96\b", "closure_96_lokal.png", 0.8),
               "closure_kecil": (r"^(CLOSURE|CL)[ _-]*48\b", "closure_48_lokal.png", 0.8),
               "closure_288": (r"^(CLOSURE|CL)[ _-]*288\b", "closure_288_lokal.png", 0.8),
-              "otb": (r"^OTB\b", "otb_lokal.png", 0.8), "slack": (r"^(SPARE|SLACK)\b", "slack_lokal.png", 0.8)}
+              "otb": (r"^OTB\b", "otb_lokal.png", 0.8), "slack": (r"^(SPARE|SLACK)\b", "slack_lokal.png", 0.8),
+              "tiang6": (r"^6M\b", "tiang6_lokal.png", 0.5),
+              "tiang7": (r"^(ICONFTTH[ -]*7M|7M|POLE 7)\b", "tiang7_lokal.png", 0.5),
+              "tiang9": (r"^(ICONFTTH[ -]*9M|9M|POLE 9)\b", "tiang9_lokal.png", 0.5)}
 
 
 def pilih_ikon(lokal):
@@ -59,12 +62,12 @@ def pilih_ikon(lokal):
     return out
 
 
-SKALA = {"fdt": 0.5, "pop": 1.2, "closure": 0.8, "otb": 0.8, "slack": 0.8, "tap": 1.1}
+SKALA = {"fdt": 0.5, "pop": 1.2, "closure": 0.8, "otb": 0.8, "slack": 0.8, "tap": 1.1, "tiang": 0.5}
 WARNA_INFRA = {"TIANG_NASIONAL": "b3ffff00", "TIANG_COMPILE": "b3ffaa55", "NEW_INFRA": "b300ff55",
                "GARIS_BANTU": "ff0000ff", "COLO_CABLE": "b37fffff"}
 IKON = {k: "files/%s.png" % k for k in ikon.BENTUK}
 WARNA_IKON = {"slack": "ff00ffff", "closure": "ff00aaff", "otb": "ffff8800", "fdt": "ff00ffff",
-              "pop": "ff0000ff", "tap": "ffff00ff"}
+              "pop": "ff0000ff", "tap": "ffff00ff", "tiang": "ff00ff55"}
 
 
 def _c(ll):
@@ -88,6 +91,8 @@ class _W(object):
             j = "closure_288" if core >= 288 else ("closure_kecil" if core <= 48 else "closure")
             if j in self.lokal:
                 return self.lokal[j]
+        if jenis.startswith("tiang"):
+            return self.lokal.get(jenis, "ikon_tiang")
         return self.lokal.get(jenis, "ikon_" + jenis)
 
     def a(self, s):
@@ -140,6 +145,22 @@ def _core_bulat(c):
     return min(CORE, key=lambda x: (abs(x - (c or 48)), x))
 
 
+def _titik_tiap(ll, langkah):
+    """Titik di sepanjang polyline (lon, lat) tiap 'langkah' meter dari awal -> [((lon, lat), jarak_m)]; ujung akhir
+    tidak diulang (di sana sudah ada slack FDT)."""
+    out, acc, target = [], 0.0, langkah
+    for a, b in zip(ll, ll[1:]):
+        d = geo.haversine(a, b)
+        while d > 0 and acc + d >= target:
+            t = (target - acc) / d
+            out.append(((a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t), int(round(target))))
+            target += langkah
+        acc += d
+    if out and acc - out[-1][1] < 0.25 * langkah:
+        out.pop()
+    return out
+
+
 def nama_traksi(h, prm, tgl=None):
     f = h["fdt"]
     n = h["penomoran"]
@@ -155,7 +176,14 @@ def _isi_traksi(w, h, prm, ke_ll):
     sel = h.get("terpilih")
     baru = h["keputusan"] == "FEEDER_BARU"
     rute = sel["rute"] if sel else (h["feeder_baru"] if baru else None)
-    core_cab = int(prm["core_feeder_baru"] if baru else prm["core_cabang"])
+    core_cab = int(prm["core_feeder_baru"] if baru else ((sel or {}).get("core_cabang") or prm["core_cabang"]))
+    ts = (sel or {}).get("tap_slack")
+    try:        # closure di titik sambung: sebesar kabel yang disambung, kecuali diatur angka tetap
+        core_tap = _core_bulat(int(prm["closure_tap"]))
+    except (TypeError, ValueError):
+        core_tap = _core_bulat((sel or {}).get("core") or 96)
+    n = h["penomoran"]
+    stub = mesin.panjang_144(prm, n.get("feeder"))      # 144F feeder baru: pola slack ujung per feeder, maks. 750 m
     kab_baru = {}            # core -> [ll]
     infra = []               # [(kelas, core, ll, keterangan)] berurutan dari awal rute
     bantu = []
@@ -163,13 +191,13 @@ def _isi_traksi(w, h, prm, ke_ll):
         titik = [ke_ll(p) for p in rute["titik"]]
         if baru and len(titik) >= 2:
             # feeder baru digambar dari POP: titik rute berurutan POP -> FDT
-            awal, sisa = geo.potong(titik, prm["stub_144_m"])
+            awal, sisa = geo.potong(titik, stub)
             kab_baru.setdefault(144, []).append(awal)
             if len(sisa) >= 2:
                 kab_baru.setdefault(core_cab, []).append(sisa)
         else:
             kab_baru.setdefault(core_cab, []).append(titik)
-        sisa_stub = float(prm["stub_144_m"]) if baru else 0.0      # bagian awal feeder baru memakai kabel 144
+        sisa_stub = stub if baru else 0.0      # bagian awal feeder baru memakai kabel 144
         for kelas, ref, xy in rute["segmen"]:
             ll = [ke_ll(p) for p in xy]
             if kelas == "GARIS_BANTU":
@@ -203,14 +231,36 @@ def _isi_traksi(w, h, prm, ke_ll):
         w.folder("Collo Cable", colo)
         w.folder("UG Utilities", lambda: (w.folder("Manhole", lambda: None), w.folder("Handhole", lambda: None)))
     w.folder("Cable", cable)
+    # tiang baru hanya di ruas New Infra: 9 m di kedua sisi penyeberangan jalan utama, 7 m tiap tiang_m di antaranya
+    tiang = {6: [], 7: [], 9: []}
+    if rute and prm.get("tulis_tiang", True) and float(prm.get("tiang_m") or 0) >= 10:
+        for a, b in rute.get("seberang") or []:
+            tiang[9] += [ke_ll(a), ke_ll(b)]
+        for kelas, _core, ll, _ref in infra:
+            if kelas != "NEW_INFRA" or ll in bantu:
+                continue
+            calon = [ll[0]] + [q for q, _j in _titik_tiap(ll, float(prm["tiang_m"]))]
+            for q in calon:
+                if all(geo.haversine(q, p9) > 12.0 for p9 in tiang[9]) and \
+                        all(geo.haversine(q, p7) > 0.5 * float(prm["tiang_m"]) for p7 in tiang[7]):
+                    tiang[7].append(q)
     for m in (6, 7, 9):
-        w.folder("Tiang %d Meter" % m, lambda m=m: (w.folder("New Tiang %d Meter" % m, lambda: None),
-                                                    w.folder("Eksisting Tiang %d Meter" % m, lambda: None)))
+        w.folder("Tiang %d Meter" % m, lambda m=m: (
+            w.folder("New Tiang %d Meter" % m, lambda: [w.titik("Tiang %d" % m, q, w.ik("tiang%d" % m),
+                                                              "Tiang baru %d m (usulan)%s" % (
+                                                                  m, " - penyeberangan jalan" if m == 9 else ""))
+                                                      for q in tiang[m]]),
+            w.folder("Eksisting Tiang %d Meter" % m, lambda: None)))
 
     def hanger():
         def nh():
             if tap_ll:
                 w.titik("Slack", tap_ll, w.ik("slack"), "Slack %d m di titik sambung (tap)" % prm["slack_m"])
+            # hanger/slack tiap hanger_m dari awal penarikan kabel baru (aturan 300 m)
+            langkah = float(prm.get("hanger_m") or 0)
+            if rute and langkah >= 50:
+                for q, jarak in _titik_tiap([ke_ll(p) for p in rute["titik"]], langkah):
+                    w.titik("Slack", q, w.ik("slack"), "Hanger/slack di %d m dari awal kabel baru" % jarak)
             w.titik("Slack", f["ll"], w.ik("slack"), "Slack %d m di FDT" % prm["slack_m"])
         w.folder("New Hanger", nh)
         w.folder("Eksisting Hanger", lambda: None)
@@ -220,14 +270,17 @@ def _isi_traksi(w, h, prm, ke_ll):
         def nc():
             for c in CORE:
                 def isi(c=c):
-                    if tap_ll and str(c) == str(prm["closure_tap"]):
-                        w.titik("Closure %d" % c, tap_ll, w.ik("closure", c), "Closure baru di titik sambung (tap)")
+                    if tap_ll and c == core_tap and not (ts and ts["jenis"] == "closure"):
+                        w.titik("Closure %d" % c, tap_ll, w.ik("closure", c),
+                                "Closure baru di titik sambung (tap)" + (", tepat di slack existing" if ts else ""))
                     if baru and c == 144 and kab_baru.get(144):
                         w.titik("Closure 144", kab_baru[144][0][-1], w.ik("closure", 144), "Slack 144: pastikan tidak berimpit "
                                 "dengan slack feeder lain")
                 w.folder("New Closure %d" % c, isi)
         w.folder("New Closure", nc)
-        w.folder("Eksisting Closure", lambda: None)
+        w.folder("Eksisting Closure", lambda: (w.titik(ts["nama"] or "Ext Closure", ts["ll"], w.ik("closure", ts.get("core") or core_tap),
+                                                       "Closure existing yang dipakai sebagai titik sambung (tap)")
+                                               if tap_ll and ts and ts["jenis"] == "closure" else None))
     w.folder("Closure", closure)
 
     def otb():
@@ -236,13 +289,21 @@ def _isi_traksi(w, h, prm, ke_ll):
                 w.folder("New OTB %d" % c, lambda c=c: (w.titik("OTB %d" % c, pop["ll"], w.ik("otb"), "OTB di POP")
                                                         if baru and pop and c == 144 else None))
         w.folder("New OTB", no)
-        w.folder("Eksisting OTB", lambda: None)
+        # setiap feeder 144F punya satu 'OTB Existing' (aturan 11-11-2026): ditulis saat menumpang feeder yang ada
+        w.folder("Eksisting OTB", lambda: (w.titik("OTB Existing", pop["ll"], w.ik("otb"), "OTB feeder %s di POP" % n.get("feeder"))
+                                           if sel and pop and not baru else None))
     w.folder("OTB", otb)
 
     def fdt():
         data = {"FDT FAT CODE": f["kode"], "PREMISES": int(f["premises"]) if f.get("premises") else "-",
-                "SPLITTERS": ("%dx1x%d" % (f["splitter"], f.get("rasio") or 4)) if f.get("splitter") else "-",
-                "LAT": repr(float(f["ll"][1])), "LONG": repr(float(f["ll"][0]))}
+                "SPLITTERS": ("%dx1x%d" % (f["splitter"], f.get("rasio") or 4)) if f.get("splitter") else "-"}
+        # kolom feeder & tube splitter (template: 'F (SP1)', 'T (SP1)') diisi dari keputusan; kolom lain apa adanya
+        if n.get("feeder") and n.get("t") and h["keputusan"] != "PERLU_MANUAL":
+            data["F (SP1)"], data["T (SP1)"] = n["feeder"], n["t"]
+        for kk, vv in (f.get("attrs") or {}).items():
+            if kk and kk not in data and kk.upper() not in ("LAT", "LONG", "NAME", "FDT FAT CODE") and len(str(vv)) <= 200:
+                data[kk] = vv if str(vv).strip() else "-"
+        data["LAT"], data["LONG"] = repr(float(f["ll"][1])), repr(float(f["ll"][0]))
         w.folder("Eksisting FDT", lambda: (w.titik(f["kode"], f["ll"], w.ik("fdt"), "", data, persis=True)
                                            if f.get("status") == "Eksisting" else None))
         w.folder("New FDT", lambda: (w.titik(f["kode"], f["ll"], w.ik("fdt"), "", data, persis=True)

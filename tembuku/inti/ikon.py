@@ -34,6 +34,7 @@ BENTUK = {
     "closure": lambda x, y: abs(math.hypot(x, y) - 0.6) - 0.22,
     "pop": lambda x, y: max(abs(x) + (y + 0.85) * 0.55 - 0.85, -y - 0.85, y - 0.8),
     "slack": lambda x, y: abs(x) + abs(y) - 0.85,
+    "tiang": lambda x, y: math.hypot(x, y) - 0.62,
 }
 
 

@@ -451,6 +451,9 @@ def versi_ganda(peran, baca_traksi_berkas, temuan):
     peran.setdefault("LAIN_VERSI", []).extend(sorted(buang))
 
 
+TANPA_PERINGATAN = set()        # berkas 'LAIN' yang sudah dijelaskan (mis. KMZ hasil Tembuku sendiri): tanpa peringatan
+
+
 def cek_peran(peran, temuan, ada_target_manual=False):
     """Peran wajib: minimal satu sumber jaringan; target FDT (kecuali mode klik peta)."""
     if not peran.get("COMPILE") and not peran.get("NASIONAL"):
@@ -468,6 +471,8 @@ def cek_peran(peran, temuan, ada_target_manual=False):
                       T("tambahkan KMZ inventaris kabel untuk wilayah ini", "add the cable inventory KMZ for this "
                         "region"))
     for p in peran.get("LAIN", []):
+        if p in TANPA_PERINGATAN:
+            continue
         temuan.tambah(PERINGATAN, "Kelengkapan", T("jenis isi berkas tidak dikenali (bukan inventaris kabel, compile, "
                                                    "titik FDT atau daftar POP), dilewati",
                                                    "the file content is not recognised (not a cable inventory, "

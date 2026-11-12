@@ -80,6 +80,35 @@ def rapatkan(xy, step):
     return out
 
 
+def titik_di(xy, ch):
+    """Titik pada polyline (meter) di jarak ch dari awal (dijepit ke ujung)."""
+    if not xy:
+        return None
+    acc = 0.0
+    for a, b in zip(xy, xy[1:]):
+        d = math.hypot(b[0] - a[0], b[1] - a[1])
+        if d > 0 and acc + d >= ch:
+            t = max(0.0, (ch - acc) / d)
+            return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+        acc += d
+    return xy[-1]
+
+
+def potong_segmen(a, b, c, d):
+    """Perpotongan segmen ab dan cd -> (t pada ab, sinus sudut) atau None."""
+    r = (b[0] - a[0], b[1] - a[1])
+    s = (d[0] - c[0], d[1] - c[1])
+    den = r[0] * s[1] - r[1] * s[0]
+    lr, ls = math.hypot(*r), math.hypot(*s)
+    if lr == 0 or ls == 0 or abs(den) < 1e-9:
+        return None
+    t = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / den
+    u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den
+    if 0.0 <= t <= 1.0 and 0.0 <= u <= 1.0:
+        return t, abs(den) / (lr * ls)
+    return None
+
+
 def potong(ll, meter):
     """Potong polyline (lon,lat) pada jarak 'meter' dari awal -> (bagian_awal, sisa). Titik potong diinterpolasi."""
     if len(ll) < 2:

@@ -9,8 +9,34 @@ BAWAAN = {
     "tube_per_fdt": (1, "KEBIJAKAN+DATA", "1 FDT = 1 tube (12 core). Splitter FDT terbesar di data 12x1x4 = 12 core; "
                      "semua feeder di data <= 8 FDT per kabel 96C (8 tube)"),
     "mode_kapasitas": ("tube", "KEBIJAKAN", "'tube' = tube utuh per FDT; 'core' = 1 core per splitter 1:4 (praktik sebagian operator)"),
-    "produk_feeder": ("FTTH", "DATA", "Jenis produk kabel inventaris yang boleh dipakai core-nya (dipisah koma). Data riil: kabel yang ditumpangi 100 % "
-                      "berimpit kabel feeder FTTH compile, 0 % kabel produk lain (FTTT, sewa, fiberisasi); kabel lain = jalur tiang"),
+    "produk_feeder": ("", "KEBIJAKAN", "Jenis produk kabel INVENTARIS yang boleh dipakai core-nya (dipisah koma; kosong = tidak ada). Aturan "
+                      "engineering 11-11-2026: compile desain feeder adalah satu-satunya sumber kapasitas tube; inventaris kabel hanya "
+                      "referensi koridor tiang. Isi mis. 'FTTH' hanya bila inventaris memang mencatat sisa core yang terverifikasi"),
+    "tube_kelompok_96": ("1-8", "KEBIJAKAN", "Nomor tube kabel induk 144F yang dicabangkan lewat kabel 96F (T1-T8). Nomor T pada folder "
+                         "compile adalah nomor tube ini; FDT ke-1..8 sebuah feeder memakai tube ini lewat kabel 96F"),
+    "tube_kelompok_48": ("9-12", "KEBIJAKAN", "Nomor tube kabel induk 144F yang dicabangkan lewat kabel 48F dari closure 144 di POP (T9-T12). "
+                         "Satu FDT = satu tube; dipilih nomor terkecil yang masih kosong"),
+    "batas_48f_km": (6.0, "KEBIJAKAN", "Jarak POP->FDT lewat jalur aktual paling jauh untuk cabang 48F; lebih jauh dari ini harus lewat kabel "
+                     "96F (kelompok T1-T8)"),
+    "pola_slack_144": (True, "KEBIJAKAN", "Feeder baru: panjang kabel 144F mengikuti pola slack ujung per nomor feeder (F01 100-250 m, "
+                       "F02 150-300 m, bergeser 50 m per feeder; dipakai titik tengah, paling panjang 750 m). Tidak = pakai stub_144_m"),
+    "maks_144_m": (750, "KEBIJAKAN", "Panjang maksimum kabel 144F dari POP"),
+    "closure_lubang_maks": (6, "KEBIJAKAN", "Jumlah lubang kabel satu closure: 1 masuk + paling banyak 5 keluar. Closure existing yang "
+                            "sudah penuh tidak dipakai sebagai titik sambung"),
+    "tulis_tiang": (True, "KEBIJAKAN", "Tulis titik tiang baru di ruas New Infra ke KMZ: tiang 7 m tiap tiang_m, tiang 9 m di kedua sisi "
+                    "penyeberangan jalan utama. Tiang ini usulan (virtual) dan ikut terbaca aplikasi BOM"),
+    "tiang_m": (50, "KEBIJAKAN", "Jarak antar tiang baru di ruas New Infra"),
+    "utamakan_aturan_6km": (True, "KEBIJAKAN", "Kandidat yang kelompok tubenya sesuai aturan 6 km (<= 6 km cabang 48F T9-T12, > 6 km "
+                            "kabel 96F T1-T8) didahulukan; kandidat lain tetap dipakai bila tidak ada yang sesuai"),
+    "koridor_min": (0.25, "KEBIJAKAN", "Cabang 48F baru dari closure 144 hanya dipakai bila paling sedikit sekian bagian jalurnya mengikuti "
+                    "koridor kabel/tiang feeder itu sendiri (kesesuaian arah feeder terhadap cluster)"),
+    "tap_slack_m": (10, "KEBIJAKAN", "Titik sambung dianggap berada di slack/closure existing bila jaraknya <= sekian meter (0-5 m kuat, "
+                    "5-10 m perlu dicek, > 10 m bukan slack itu)"),
+    "tap_slack_toleransi_m": (150, "KEBIJAKAN", "Titik sambung dipindah ke slack/closure existing terdekat bila kabel barunya paling banyak "
+                              "sekian meter lebih panjang daripada titik sambung bebas"),
+    "hanger_m": (300, "KEBIJAKAN", "Jarak antar titik hanger/slack di sepanjang kabel baru, dihitung dari awal penarikan"),
+    "detour_lurus_maks_m": (1000, "KEBIJAKAN", "Batas memutar (detour_maks) hanya diuji bila jarak lurus titik sambung ke FDT kurang dari ini; "
+                            "cabang panjang mengikuti jalan dan wajar memutar lebih"),
     "core_feeder_min": (48, "KEBIJAKAN", "Kabel inventaris < 48 core dianggap kabel distribusi, bukan feeder"),
     "core_per_tube": (12, "STANDAR", "ANSI/TIA-598-D (2014) + Addendum 1 (2018): 12 warna serat per tube; notasi 24/2, "
                       "48/4, 96/8"),
@@ -18,15 +44,17 @@ BAWAAN = {
     "pakai_spare_kosong": (True, "KEBIJAKAN", "Kabel inventaris tanpa data core cadangan (spare) tetap ditampilkan sebagai kandidat yang sisa tube-nya belum pasti (peringkat diturunkan), tidak pernah langsung dipakai"),
     "cos_arah_min": (0.5, "DATA", "Feeder dianggap searah bila melenceng paling banyak 60° dari arah POP ke FDT (nilai 0,5 = 60°). Desain nyata: 7 dari 10 melenceng kurang dari 23°"),
     "jarak_dekat_m": (300, "DATA", "Bila FDT sudah sangat dekat dengan kabel (<= 300 m), arah kabel tidak menentukan. Desain nyata: kabel yang melenceng 141° pun dipakai pada jarak 144 m"),
-    "detour_maks": (1.5, "DATA", "Panjang kabel baru / jarak lurus tap-FDT; data riil 1,01-1,30"),
-    "cabang_maks_m": (2500, "KEBIJAKAN", "Kabel baru titik sambung->FDT terpanjang yang masih masuk akal saat menumpang feeder yang ada"),
+    "detour_maks": (1.5, "DATA", "Panjang kabel baru / jarak lurus tap-FDT untuk cabang pendek (< detour_lurus_maks_m); data riil 1,01-1,30"),
+    "cabang_maks_m": (6000, "KEBIJAKAN", "Kabel baru titik sambung->FDT terpanjang yang masih masuk akal saat menumpang feeder yang ada "
+                      "(cabang 48F baru dari closure 144 di POP bisa sepanjang jalur POP->FDT; desain nyata Bengkulu 3,7 km)"),
     "rasio_jalur_maks": (1.24, "DATA", "Searah ke FDT: panjang serat bila menumpang feeder yang ada (POP->titik sambung->FDT) <= 1,24 x feeder baru "
                          "langsung dari POP. Dikalibrasi pada 17 traksi riil Bitung & Tomohon (menumpang <= 1,23; feeder baru "
                          ">= 1,25); keputusan dalam +-0,05 dari ambang ditandai BATAS untuk ditinjau"),
     "zona_batas": (0.05, "KEBIJAKAN", "Hasil yang selisihnya kurang dari 0,05 dari batas panjang jalur ditandai 'perlu ditinjau'"),
     "faktor_tiang_eksisting": (0.8, "KEBIJAKAN", "Biaya relatif per meter menumpang tiang yang sudah ada"),
     "faktor_akses": (1.2, "KEBIJAKAN", "Sambungan lurus FDT/POP ke jaringan terdekat (<= 150 m)"),
-    "faktor_bebas": (1.35, "KEBIJAKAN", "Garis bantu lurus bila tidak ada data jalan (WAJIB digambar ulang)"),
+    "faktor_bebas": (4.0, "KEBIJAKAN", "Bobot biaya garis bantu lurus saat data jalan ADA: garis bantu hanya dipakai bila jalur jalan/tiang "
+                     "lebih dari 4x lebih panjang (desain nyata mengikuti jalan 100 %). Tanpa data jalan dipakai 1,35"),
     "faktor_garis_bantu": (1.35, "DATA", "Panjang nyata jalur yang masih berupa garis bantu lurus = 1,35 x lurus "
                            "(7 feeder baru riil: jalur/lurus 1,06-1,65, rata-rata 1,35)"),
     "akses_maks_m": (150, "KEBIJAKAN", "Jarak maksimum FDT/POP ke jalan/kabel terdekat"),
@@ -39,7 +67,8 @@ BAWAAN = {
     "core_cabang": (48, "DATA", "Kabel cabang titik sambung->FDT: 48C (pola semua desain menumpang di data riil)"),
     "core_feeder_baru": (96, "DATA", "Feeder baru: OTB 144 + 144C ke Closure 144 (slack) lalu 96C (pola T1 di data riil)"),
     "stub_144_m": (75, "DATA", "Panjang 144C dari OTB ke Closure 144: data riil 40-93 m"),
-    "closure_tap": ("96", "DATA", "Closure baru di titik sambung: 'New Closure 96' pada 7 dari 10 desain menumpang di data riil"),
+    "closure_tap": ("auto", "DATA", "Closure di titik sambung: 'auto' = sebesar kabel yang disambung (144/96/48; closure existing dipakai "
+                    "bila titik sambungnya di closure existing), atau angka tetap mis. 96"),
     "slack_m": (10, "STANDAR", "ITU-T L.163 (11/2018): sisakan panjang kabel >= 10 m per ujung untuk penyambungan "
                 "(L.163 juga menyarankan ~10 % lebih untuk kabel permukaan; panjang rute Tembuku sudah dikalibrasi)"),
     "pop_maks_m": (20000, "STANDAR", "POP dianggap melayani FDT hanya dalam 20 km: jangkauan fisik GPON 10 atau 20 km, "
@@ -107,8 +136,19 @@ def baru(ubah=None):
     p = {k: v[0] for k, v in BAWAAN.items()}
     for k, v in (ubah or {}).items():
         if k in p:
-            p[k] = type(p[k])(v) if not isinstance(p[k], bool) else bool(v)
+            try:
+                p[k] = type(p[k])(v) if not isinstance(p[k], bool) else (
+                    v if isinstance(v, bool) else str(v).strip().lower() in ("1", "true", "ya", "y", "yes", "on"))
+            except (TypeError, ValueError):     # nilai tak terbaca: bawaan dipertahankan, tidak menghentikan analisis
+                pass
     return p
+
+
+def rentang_tube(teks, bawaan=()):
+    """'1-8' / '9,10,11,12' / 'T9-T12' -> himpunan nomor tube (1..48). Teks tak terbaca -> bawaan."""
+    from . import validasi
+    out = validasi.nomor_tube(teks)
+    return out or set(bawaan)
 
 
 def dasar():
@@ -121,6 +161,14 @@ LABEL_ID = {
     "radius_cari_m": "Radius pencarian feeder (m)", "tube_per_fdt": "Tube per FDT",
     "mode_kapasitas": "Cara hitung kapasitas", "produk_feeder": "Jenis produk kabel yang boleh dipakai",
     "core_feeder_min": "Ukuran feeder terkecil (core)", "core_per_tube": "Core per tube",
+    "tube_kelompok_96": "Tube 144F untuk cabang 96F", "tube_kelompok_48": "Tube 144F untuk cabang 48F",
+    "pola_slack_144": "Panjang 144F mengikuti pola slack per feeder", "maks_144_m": "Panjang maksimum kabel 144F (m)",
+    "closure_lubang_maks": "Lubang kabel per closure", "tulis_tiang": "Tulis tiang baru di New Infra",
+    "tiang_m": "Jarak antar tiang baru (m)",
+    "batas_48f_km": "Jarak POP-FDT terjauh untuk cabang 48F (km)", "utamakan_aturan_6km": "Dahulukan kelompok tube sesuai aturan 6 km", "koridor_min": "Bagian jalur minimum di koridor feeder sendiri",
+    "tap_slack_m": "Jarak titik sambung ke slack/closure existing (m)",
+    "tap_slack_toleransi_m": "Toleransi memindah titik sambung ke slack existing (m)", "hanger_m": "Jarak antar hanger (m)",
+    "detour_lurus_maks_m": "Batas memutar hanya untuk cabang lebih pendek dari (m)",
     "cadangan_tube": "Tube cadangan yang disisakan", "pakai_spare_kosong": "Tampilkan kabel tanpa data cadangan",
     "cos_arah_min": "Arah feeder minimum (0,5 = boleh melenceng 60°)", "jarak_dekat_m": "Jarak 'sangat dekat' ke kabel (m)",
     "detour_maks": "Batas memutar kabel baru (x jarak lurus)", "cabang_maks_m": "Kabel baru terpanjang (m)",
@@ -145,8 +193,39 @@ PENJELASAN_EN = {
                       "in the real designs is 1,466 m."),
     "tube_per_fdt": ("Tubes per FDT", "Each FDT uses one whole tube (12 fibres)."),
     "mode_kapasitas": ("Capacity mode", "'tube' = one whole tube per FDT; 'core' = one fibre per 1:4 splitter."),
-    "produk_feeder": ("Cable products that may be tapped", "Only cables of these product types (comma separated) may "
-                      "give fibres to a new FDT. Other cables are used only as existing pole routes."),
+    "produk_feeder": ("Inventory cable products that may be tapped", "Empty (default): cables of the cable inventory are "
+                      "existing pole routes only; free tubes come from the feeder design compilation alone (engineering "
+                      "rule of 11 Nov 2026). Enter product types (comma separated, e.g. FTTH) only when the inventory "
+                      "records verified spare fibres."),
+    "tube_kelompok_96": ("144F tubes for the 96F branch", "Tube numbers of the 144F trunk that are branched through the "
+                         "96F cable (T1-T8). The T number of a compilation folder is this tube number."),
+    "tube_kelompok_48": ("144F tubes for 48F branches", "Tube numbers of the 144F trunk that are branched through a 48F "
+                         "cable from the closure 144 at the POP (T9-T12). One FDT uses one tube; the lowest free number "
+                         "is proposed."),
+    "batas_48f_km": ("Longest POP-to-FDT route for a 48F branch (km)", "Beyond this route length the FDT must be fed "
+                     "through the 96F cable (tubes T1-T8)."),
+    "pola_slack_144": ("144F length by feeder slack pattern", "New feeder: the 144F cable ends in the slack window of its "
+                       "feeder number (F01 100-250 m, F02 150-300 m, +50 m per feeder; the middle is used, at most 750 m). "
+                       "Off = use the fixed stub length."),
+    "maks_144_m": ("Longest 144F cable (m)", "Maximum length of the 144F cable from the POP."),
+    "closure_lubang_maks": ("Cable holes per closure", "One input plus at most five outputs. A full existing closure is "
+                            "not used as a tap point."),
+    "tulis_tiang": ("Write new poles to the KMZ", "New-infra stretches get 7 m poles at the pole spacing and 9 m poles on "
+                    "both sides of a main-road crossing. These are proposed poles and a bill-of-materials tool reads them."),
+    "tiang_m": ("New pole spacing (m)", "Distance between new poles on new-infra stretches."),
+    "utamakan_aturan_6km": ("Prefer the tube group of the 6 km rule", "Candidates whose tube group fits the 6 km rule "
+                            "(up to 6 km: 48F branch T9-T12; beyond: 96F cable T1-T8) are preferred; others are used "
+                            "only when none fits."),
+    "koridor_min": ("Minimum share of the route on the feeder's own corridor", "A new 48F branch from the closure 144 is "
+                    "used only when at least this share of its route follows that feeder's own cables or poles "
+                    "(direction fit of the feeder to the cluster)."),
+    "tap_slack_m": ("Tap-to-slack distance (m)", "A tap point this close to an existing slack or closure is treated as "
+                    "being at it (0-5 m strong, 5-10 m to check)."),
+    "tap_slack_toleransi_m": ("Tolerance for moving the tap to a slack (m)", "The tap point is moved to the nearest "
+                              "existing slack or closure when the new cable gets at most this much longer."),
+    "hanger_m": ("Hanger spacing (m)", "Distance between hanger/slack points along the new cable, from the start of the pull."),
+    "detour_lurus_maks_m": ("Detour check only below (m)", "The detour limit is applied only when the straight distance "
+                            "from the tap to the FDT is shorter than this; long branches follow roads and detour more."),
     "core_feeder_min": ("Smallest feeder size (fibres)", "Cables with fewer fibres are treated as distribution cables, "
                         "not feeders."),
     "core_per_tube": ("Fibres per tube", "Fibre colour code ANSI/TIA-598-D: 12 fibres per tube."),
@@ -179,7 +258,8 @@ PENJELASAN_EN = {
     "core_cabang": ("New branch cable size", "Fibre count of the new cable from the tap to the FDT."),
     "core_feeder_baru": ("New feeder cable size", "Fibre count of a new feeder from the POP."),
     "stub_144_m": ("144-fibre stub length (m)", "Length of the 144-fibre cable from the OTB to the first closure."),
-    "closure_tap": ("Closure at the tap", "Closure size placed at the tap point."),
+    "closure_tap": ("Closure at the tap", "'auto' = the size of the tapped cable (144/96/48; an existing closure is reused "
+                    "when the tap is at one), or a fixed size such as 96."),
     "slack_m": ("Slack per cable end (m)", "Spare cable left at each end for splicing: at least 10 m (ITU-T L.163, 11/2018)."),
     "pop_maks_m": ("Furthest POP (m)", "A POP serves an FDT only within this distance. GPON physical reach is 10 or "
                    "20 km (ITU-T G.984.1)."),

@@ -86,6 +86,25 @@ def _seperti_fdt(nama):
     return bool(RX_FDT.match(nama or "") or RX_FDT_LONGGAR.match((nama or "").strip()))
 
 
+TANDA_TEMBUKU = "Dibuat oleh Tembuku"
+
+
+def keluaran_tembuku(path):
+    """True bila berkas adalah KMZ/KML hasil Tembuku sendiri (keterangan dokumen memuat tanda pembuat). Hasil lama di
+    folder data tidak boleh ikut terbaca sebagai compile/FDT - itu membuat kapasitas dan nomor F/T tercemar."""
+    try:
+        if baca.jenis(path) not in ("KMZ", "KML"):
+            return False
+        src = kml_aman.buka(path)
+        try:
+            head = src.read(8192)
+        finally:
+            src.close()
+        return TANDA_TEMBUKU.encode("utf-8") in head
+    except Exception:
+        return False
+
+
 def intip(path, n=1500):
     """Kenali peran berkas dari ISI objeknya (nama berkas hanya petunjuk kecil). -> (peran, skor, bukti).
 
@@ -300,6 +319,31 @@ def _jenis_kabel_umum(pth, nama):
     return "INFRA"
 
 
+RX_EKST_PETA = re.compile(r"\.(kmz|kml|zip|geojson|json)$", re.I)
+
+
+def _folder_pop(p, path_asli, info):
+    """Folder POP sebuah objek compile = folder bernama POP yang TERDEKAT ke folder traksi (di atasnya), bukan nama
+    dokumen/berkas (mis. 'BENGKULU POP 4.kmz' sebagai nama Document di atas folder 'BENGKULU POP 4'). Nama berkas
+    hanya dipakai bila tidak ada folder POP lain, dan ekstensinya dibuang, agar identitas POP sama di semua wilayah."""
+    batas = info[0][0] if info else len(p)
+    calon = [(j, f) for j, f in enumerate(p[:batas]) if RX_POPF.search(f) and not V.baca_traksi(f) and not V.baca_feeder(f)]
+    if not calon:
+        calon = [(j, f) for j, f in enumerate(p) if RX_POPF.search(f) and not V.baca_traksi(f) and not V.baca_feeder(f)]
+    if not calon:
+        return ""
+    nama = calon[-1][1]
+    if len(calon) > 1 and RX_EKST_PETA.search(nama):      # nama dokumen di bawah? ambil yang bukan nama berkas
+        nama = next((f for _j, f in reversed(calon) if not RX_EKST_PETA.search(f)), nama)
+    return RX_EKST_PETA.sub("", nama).strip()
+
+
+def kunci_pop(nama):
+    """Bentuk baku nama POP untuk pencocokan antar sumber: huruf besar, tanpa ekstensi berkas dan tanda baca."""
+    s = RX_EKST_PETA.sub("", str(nama or "").strip())
+    return re.sub(r"[^A-Z0-9]", "", s.upper())
+
+
 def baca_compile(path, temuan=None):
     """-> dict(pops, traksi{kunci: {...}}, kabel[...], fdt[...]) dari satu KMZ compile desain feeder.
     Folder traksi berpola F<n>_T<k> dipakai bila ada; bila tidak ada sama sekali, unit desain dikenali dari struktur
@@ -320,15 +364,19 @@ def baca_compile(path, temuan=None):
                                                    "cables). F/T numbers come from folder names where present, "
                                                    "otherwise they are numbered in order") % len(struktur), base,
                           T("periksa nomor F/T di hasil", "check the F/T numbers in the results"))
+    n_drop = 0
     for pm in baca.placemarks(path):
         n_pm += 1
+        if any(str(f).strip().upper() == "DROP" for f in pm["path"]):      # aturan: folder bernama Drop diabaikan
+            n_drop += 1
+            continue
         p = [V.kanon_folder(f, temuan, base) for f in pm["path"]]
         info = [(j, V.baca_traksi(f, temuan, base)) for j, f in enumerate(p)]
         info = [(j, t) for j, t in info if t]
         if not info and struktur:
             cocok = sorted((u for u in struktur if tuple(pm["path"][:len(u)]) == u), key=len)
             info = [(len(u) - 1, struktur[u]) for u in cocok]     # terluar dulu: unit di dalam unit = ruas lanjutan
-        popf = next((f for f in p if RX_POPF.search(f) and not V.baca_traksi(f) and not V.baca_feeder(f)), "")
+        popf = _folder_pop(p, pm["path"], info)
         fdr = next((V.baca_feeder(f, temuan, base) for f in p if V.baca_feeder(f)), None)
         g0, cs = pm["geoms"][0]
         leaf = p[-1] if p else ""
@@ -356,14 +404,16 @@ def baca_compile(path, temuan=None):
             fdr = str(t0["feeder"])
         key = (base, popf, fdr, induk)
         t = traksi.setdefault(key, {"kode": induk, "info": t0, "pop_folder": popf, "feeder": fdr, "berkas": base,
-                                    "fdt": [], "kabel": [], "colo": [], "closure": [], "lain": []})
+                                    "fdt": [], "kabel": [], "colo": [], "closure": [], "slack": [], "lain": []})
+        if "tube" not in t["info"]:
+            t["info"]["tube"] = V.nomor_tube(t0.get("t", ""))      # nomor T folder = nomor tube kabel induk 144F
         sub = j != j0
         if g0 == "Point" and not _turunan_fdt(pm["name"]) and (
                 any("FDT" in f.upper() for f in p[j + 1:]) or _seperti_fdt(pm["name"]) or
                 (t0.get("struktur") and _tanda_fdt(pm))):
             rec = _fdt_rec(pm, cs[0], temuan, base)
             rec.update({"traksi": induk, "feeder": fdr, "pop_folder": popf, "colo_saudara": sub,
-                        "status": "Eksisting" if "Eksisting FDT" in p else "New"})
+                        "status": "Eksisting" if "Eksisting FDT" in p else "New", "attrs": dict(pm["attrs"])})
             t["fdt"].append(rec)
             fdts.append(rec)
         elif g0 == "LineString":
@@ -393,14 +443,24 @@ def baca_compile(path, temuan=None):
                    "warna": pm["warna"], "folder": leaf}
             kab.append(rec)
             (t["colo"] if jenis == "COLO_CABLE" else t["kabel"]).append(rec)
-        elif g0 == "Point" and ("CLOSURE" in leaf.upper() or "Eksisting Closure" in p):
-            t["closure"].append({"nama": pm["name"], "ll": cs[0], "eksisting": "Eksisting Closure" in p})
+        elif g0 == "Point" and ("CLOSURE" in leaf.upper() or "Eksisting Closure" in p or
+                                re.search(r"(^|[^A-Z])(CLOSURE|CL)([^A-Z]|$)", (pm["name"] or "").upper())):
+            t["closure"].append({"nama": pm["name"], "ll": cs[0], "eksisting": "Eksisting Closure" in p or
+                                 bool(re.search(r"\b(EXT|EKS|EXISTING|EKSISTING)\b", (pm["name"] or "").upper())),
+                                 "core": V.koreksi_core(pm["name"], None) or V.koreksi_core(leaf, None)})
+        elif g0 == "Point" and re.search(r"SLACK|HANGER|SPARE", (leaf + " " + (pm["name"] or "")).upper()):
+            # titik slack/hanger di sepanjang kabel: calon titik sambung (aturan: closure baru tepat di koordinat slack)
+            t["slack"].append({"nama": pm["name"], "ll": cs[0], "eksisting": "Eksisting" in leaf})
         else:
             t["lain"].append({"nama": pm["name"], "ll": cs[0], "folder": leaf})
     if n_pm == 0:
         temuan.tambah(V.FATAL, "Kelengkapan", T("KMZ compile tidak berisi objek apa pun", "the compilation KMZ contains "
                                                 "no objects"), base,
                       T("ekspor ulang KMZ dari aplikasi pembuatnya", "export the KMZ again from the program that made it"))
+    if n_drop:
+        temuan.tambah(V.INFO, "Isi data", T("%d objek di dalam folder bernama 'Drop' diabaikan (aturan engineering)",
+                                            "%d objects inside folders named 'Drop' were ignored (engineering rule)")
+                      % n_drop, base)
     _cek_konsistensi(traksi, temuan, base)
     return {"pops": list(pops.values()), "traksi": traksi, "kabel": kab, "fdt": fdts, "berkas": base}
 
@@ -490,7 +550,7 @@ def baca_target(path, temuan=None):
                 clus, area = m.group(1), m.group(2).strip()
         rec.update({"_lat": atribut.nilai(pm["attrs"], "lat"), "_lon": atribut.nilai(pm["attrs"], "lon"),
                     "cluster": clus, "area": area, "tanggal": tgl, "berkas": base,
-                    "status": "Eksisting" if "Eksisting FDT" in p else "New"})
+                    "status": "Eksisting" if "Eksisting FDT" in p else "New", "attrs": dict(pm["attrs"])})
         lama = out.get(rec["kode"].upper())
         if lama is None:
             out[rec["kode"].upper()] = rec
@@ -630,6 +690,15 @@ def kumpulkan(paths, temuan=None, bukti=None, folder_kerja=None):
                                                          "with coordinates, Shapefile, GeoPackage), skipped"),
                           os.path.basename(p))
             continue
+        if keluaran_tembuku(p):
+            peran["LAIN"].append(p)
+            V.TANPA_PERINGATAN.add(p)
+            bukti[p] = T("KMZ hasil Tembuku sebelumnya; tidak dibaca sebagai data masukan",
+                         "a previous Tembuku result KMZ; not read as input data")
+            temuan.tambah(V.INFO, "Kelengkapan", T("KMZ hasil Tembuku sebelumnya, dilewati agar tidak terhitung sebagai "
+                                                   "feeder atau FDT", "a previous Tembuku result KMZ, skipped so it is "
+                                                   "not counted as a feeder or FDT"), os.path.basename(p))
+            continue
         try:
             r, sk, alasan = intip(p)
         except kml_aman.BerkasDitolak as e:
@@ -669,9 +738,9 @@ def cari_berkas(folder, rekursif=True):
               ".prj", ".cpg", ".qix", ".sbn", ".sbx", ".qmd", ".xml", ".html", ".htm", ".py", ".qgs", ".qgz")
     ogr, _o = baca._ogr()
     for d, dirs, files in os.walk(folder):
-        dirs[:] = [x for x in dirs if not x.startswith((".", "_TEMBUKU", "TEMBUKU_HASIL"))]
+        dirs[:] = [x for x in dirs if not x.upper().startswith((".", "_TEMBUKU", "TEMBUKU_HASIL", "TEMBUKU_"))]
         for f in sorted(files):
-            if f.upper().startswith("TEMBUKU_"):
+            if f.upper().startswith("TEMBUKU_") or f.upper().endswith("_ANALISIS.KMZ"):
                 continue
             p = os.path.join(d, f)
             low = f.lower()
