@@ -310,8 +310,12 @@ def _sepotong(kabel, ll, min_m=2.0):
     if not kabel or len(ll) < 2:
         return None
     k = math.cos(math.radians(ll[0][1]))
-    m = lambda p: (p[0] * 111320.0 * k, p[1] * 110574.0)
-    b = lambda q: (q[0] / (111320.0 * k), q[1] / 110574.0)
+
+    def m(p):
+        return (p[0] * 111320.0 * k, p[1] * 110574.0)
+
+    def b(q):
+        return (q[0] / (111320.0 * k), q[1] / 110574.0)
 
     def proyeksi(q, xy):
         best, acc = None, 0.0
@@ -363,8 +367,12 @@ def _rapat_ke_feeder(g, feeder, tol_m=12.0, min_m=30.0):
     if not feeder or len(feeder) < 2 or not g or len(g) < 3:
         return g
     k = math.cos(math.radians(g[0][1]))
-    m = lambda p: (p[0] * 111320.0 * k, p[1] * 110574.0)
-    b = lambda q: (q[0] / (111320.0 * k), q[1] / 110574.0)
+
+    def m(p):
+        return (p[0] * 111320.0 * k, p[1] * 110574.0)
+
+    def b(q):
+        return (q[0] / (111320.0 * k), q[1] / 110574.0)
     F = [m(p) for p in feeder]
     G = [m(p) for p in g]
     cum = [0.0]
