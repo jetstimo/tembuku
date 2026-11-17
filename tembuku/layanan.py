@@ -440,7 +440,11 @@ class Sesi(object):
                 continue
             try:
                 c = sumber.baca_compile(p, V.Temuan())
-            except Exception:
+            except (OSError, ValueError, KeyError, TypeError) as e:
+                # KMZ lama yang rusak tidak menghentikan proses, tetapi dicatat (tidak ditelan diam-diam)
+                self.temuan.tambah(V.INFO, "Kelengkapan", T("desain Tembuku sebelumnya tidak bisa dibaca (%s), dilewati",
+                                                            "an earlier Tembuku design cannot be read (%s), skipped")
+                                   % str(e)[:100], nm, "")
                 continue
             if not c.get("traksi") or any(str(f.get("kode") or "").upper() in kode_target for f in c.get("fdt", [])):
                 continue
