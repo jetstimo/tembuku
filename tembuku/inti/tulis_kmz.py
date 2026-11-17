@@ -577,7 +577,7 @@ def _isi_traksi(w, h, prm, ke_ll):
     # COLO CABLE digambar sekali; bagian kabel baru yang menyusuri tiang feeder yang sama dirapatkan ke garis itu
     colo_final = None
     if sel and sel.get("colo_xy") and len(sel["colo_xy"]) >= 2:
-        colo_final = _bersihkan_ll([ke_ll(p) for p in rapikan_garis(sel["colo_xy"])])
+        colo_final = _bersihkan_ll([ke_ll(p) for p in rapikan_garis(sel.get("colo_gambar_xy") or sel["colo_xy"])])
         if not baru:
             kab_final = {c: [_rapat_ke_feeder(g, colo_final) for g in daftar] for c, daftar in kab_final.items()}
     semua_final = [g for daftar in kab_final.values() for g in daftar]

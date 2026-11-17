@@ -61,7 +61,8 @@ class Graf(object):
         out.sort()
         return out
 
-    def dijkstra(self, src, jenis_boleh=None, maks=INF):
+    def dijkstra(self, src, jenis_boleh=None, maks=INF, kabel_boleh=None):
+        """kabel_boleh: bila diisi, tepi KABEL hanya yang ref-nya ada di himpunan ini (jalur serat feeder sendiri)."""
         dist = [INF] * len(self.xy)
         prev = [None] * len(self.xy)
         dist[src] = 0.0
@@ -72,6 +73,8 @@ class Graf(object):
                 continue
             for v, _L, c, jenis, ref in self.adj[u]:
                 if jenis_boleh is not None and jenis not in jenis_boleh:
+                    continue
+                if kabel_boleh is not None and jenis == "KABEL" and ref not in kabel_boleh:
                     continue
                 nd = d + c
                 if nd < dist[v]:

@@ -499,7 +499,13 @@ def analisis(fdt, data, prm=None, log=None):
             for d, j in G.dekat(G.xy[i], prm["sambung_jalan_m"], lambda j: not G.refs[j])[:1]:
                 G.tepi(i, j, "SAMBUNG", None, 1.0)
     nf = G.simpul(fx)
-    for d, j in G.dekat(fx, prm["akses_maks_m"], lambda j: j != nf)[:8]:
+    # sambungan lurus FDT -> jaringan hanya ke simpul yang hampir sedekat simpul terdekat (+30 m / 1,5x): sambungan
+    # panjang memotong rumah ke jalan lain tidak dipakai bila ada jalan/tiang tepat di samping FDT (Tomohon KGA01)
+    akses = G.dekat(fx, prm["akses_maks_m"], lambda j: j != nf)
+    if akses:
+        batas_akses = max(akses[0][0] * 1.5, akses[0][0] + 30.0)
+        akses = [(d, j) for d, j in akses if d <= batas_akses]
+    for d, j in akses[:8]:
         G.tepi(nf, j, "AKSES", None, prm["faktor_akses"])
     np_ = None
     # garis bantu: saat ada data jalan hanya dipakai bila jalur jalan/tiang jauh lebih panjang (faktor_bebas, 4x)
@@ -1094,10 +1100,31 @@ def _nilai_kandidat(G, k, pilihan, prevA, distB, prevB, prm, P, byid, tanda, kor
     pjg_est = rute["panjang_est_m"]
     colo_m = None
     colo_xy = []
+    colo_gambar = None
     if prevB is not None and distB[v] < INF:
         jl = G.jalur(prevB, v)
         colo_xy = [G.xy[n] for n, _j, _r in jl]
         colo_m = geo.panjang(colo_xy)
+        # GAMBAR COLO CABLE mengikuti kabel feeder itu sendiri dari POP sampai titik sambung, bukan kabel lain yang
+        # kebetulan lebih pendek (Tomohon: 3 km numpang kabel inventaris jaringan lain). Hanya untuk gambar: jarak,
+        # redaman dan biaya tetap dari jalur terpendek (uji sembunyikan-satu Palembang: memakai jalur feeder sendiri
+        # untuk keputusan menurunkan kecocokan 48 -> 41 dari 60 karena data feeder di compile sering tidak lengkap).
+        me = byid.get(k.get("id")) or {}
+        if me.get("sumber") == "COMPILE" and me.get("feeder") is not None:
+            kunci = (me.get("pop_folder"), str(me.get("feeder")))
+            cache = G.__dict__.setdefault("_jalur_feeder", {})
+            if kunci not in cache:
+                refs = {i for i, kb in byid.items() if kb.get("sumber") == "COMPILE"
+                        and (kb.get("pop_folder"), str(kb.get("feeder"))) == kunci}
+                src = jl[0][0]
+                cache[kunci] = G.dijkstra(src, jenis_boleh=("KABEL", "SAMBUNG", "AKSES"), maks=distB[v] * 4 + 1000.0,
+                                          kabel_boleh=refs)
+            d2, p2 = cache[kunci]
+            if d2[v] < INF:
+                xy2 = [G.xy[n] for n, _j, _r in G.jalur(p2, v)]
+                m2 = geo.panjang(xy2)
+                if m2 <= 1.5 * colo_m + 50.0:
+                    colo_gambar = xy2
     st, bebas, teks, info = k["kap"]
     info = dict(info or {})
     if colo_m is not None:
@@ -1272,7 +1299,7 @@ def _nilai_kandidat(G, k, pilihan, prevA, distB, prevB, prm, P, byid, tanda, kor
             "pop_nama": k.get("pop_nama"), "traksi": k.get("traksi"), "grup": k.get("grup"), "tap_simpul": v,
             "cos": None if cosv is None else round(cosv, 2), "sumber_arah": sumber_arah, "searah": searah,
             "lurus_m": round(lurus), "kabel_baru_m": round(pjg), "detour": round(detour, 2),
-            "colo_m": None if colo_m is None else round(colo_m), "colo_xy": colo_xy, "jalur_serat_m": round(jalur_serat),
+            "colo_m": None if colo_m is None else round(colo_m), "colo_xy": colo_xy, "colo_gambar_xy": colo_gambar, "jalur_serat_m": round(jalur_serat),
             "rute": rute, "budget": bud, "gagal": gagal, "catatan": alasan, "skor": skor, "koridor_sendiri": koridor,
             "tap_slack": tap_slack, "core_cabang": core_cabang, "lolos": not gagal and st == "LOLOS", "biaya": c,
             "kelompok_sesuai": sesuai, "di_pop": di_pop, "colo_rasio": round(colo_rasio, 3),

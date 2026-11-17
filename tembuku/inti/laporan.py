@@ -169,6 +169,7 @@ header h1{font-size:17px}.det{padding:12px 16px}table{display:block;overflow-x:a
 .chips{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--line)}
 .chip{border:1px solid var(--line);border-radius:999px;padding:3px 10px;cursor:pointer;font-size:12px;background:#fff}
 .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.chip.kosong:not(.on){opacity:.5}
 .it{padding:10px 16px;border-bottom:1px solid var(--line);cursor:pointer}.it:hover{background:#f3efe2}
 .it.on{background:#fff6dd;box-shadow:inset 4px 0 0 var(--emas)}
 .it b{font-family:var(--display);font-weight:800}.tag{display:inline-block;font-size:11px;font-weight:600;padding:1px 8px;border-radius:999px;color:#fff;margin-left:6px}
@@ -220,9 +221,14 @@ document.getElementById("lead").innerHTML=`<b>Ringkasan:</b> <b>${n("COLO")}</b>
 (nb?`, <b>${nb}</b> perlu ditinjau karena dua pilihannya hampir seimbang.`:".")+
 `<br><b>Langkah Anda:</b> klik tiap FDT di daftar, baca alasannya, lalu cek jalurnya di peta. Dahulukan yang bertanda <i>perlu ditinjau</i>, <i>cek sisa tube</i> atau <i>perlu dirancang manual</i>.`;
 const chips=[["ALL","Semua"],["COLO","Pakai feeder"],["COLO_CEK","Cek sisa tube"],["FEEDER_BARU","Feeder baru"],["PERLU_MANUAL","Manual"],["BATAS","Perlu ditinjau"]];
-function rChips(){document.getElementById("chips").innerHTML=chips.map(c=>`<span class="chip ${filt==c[0]?"on":""}" data-f="${c[0]}">${c[1]}</span>`).join("");
+const cocok=(d,f)=>f=="ALL"||d.kep==f||(f=="BATAS"&&d.batas);
+function rChips(){document.getElementById("chips").innerHTML=chips.map(c=>{const j=D.filter(d=>cocok(d,c[0])).length;
+return `<span class="chip ${filt==c[0]?"on":""}${j?"":" kosong"}" data-f="${c[0]}" title="${j} FDT">${c[1]} (${j})</span>`}).join("");
 document.querySelectorAll(".chip").forEach(e=>e.onclick=()=>{filt=e.dataset.f;rChips();rList()})}
-function rList(){document.getElementById("list").innerHTML=D.map((d,i)=>({d,i})).filter(o=>filt=="ALL"||o.d.kep==filt||(filt=="BATAS"&&o.d.batas)).map(({d,i})=>
+function rList(){const pilih=D.map((d,i)=>({d,i})).filter(o=>cocok(o.d,filt));
+if(!pilih.length){const nm=(chips.find(c=>c[0]==filt)||["",""])[1];document.getElementById("list").innerHTML=
+`<div style="padding:14px 16px;color:#5b6b78;font-size:13px">Tidak ada FDT dengan kategori <b>${esc(nm)}</b> di laporan ini. Pilih <b>Semua</b> untuk melihat semua FDT.</div>`;return}
+document.getElementById("list").innerHTML=pilih.map(({d,i})=>
 `<div class="it ${i==cur?"on":""}" data-i="${i}"><b>${esc(d.kode)}</b><span class="tag ${d.kep}">${NAMA[d.kep]}</span>${d.batas?'<span class="tag BATAS">perlu ditinjau</span>':""}
 <div style="font-size:12px;color:#5b6b78">${d.baru!=null?("kabel baru "+idn(d.baru)+" m · "):""}${esc(d.pop)} (${idn(d.jarak_pop)} m)</div></div>`).join("");
 document.querySelectorAll(".it").forEach(e=>e.onclick=()=>show(+e.dataset.i))}
