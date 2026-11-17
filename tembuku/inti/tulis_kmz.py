@@ -355,6 +355,76 @@ def _sepotong(kabel, ll, min_m=2.0):
     return [b(q) for q in out] if len(out) >= 2 else None
 
 
+def _rapat_ke_feeder(g, feeder, tol_m=12.0, min_m=30.0):
+    """Bagian awal kabel baru (dari titik sambung) yang menyusuri tiang feeder yang sama digambar persis di atas garis
+    feeder (COLO CABLE), supaya dua kabel di tiang yang sama tidak tampak sebagai dua jalur. Hanya bila bagian yang
+    berimpit >= min_m; sisanya (menuju FDT) tidak diubah. Ujung awal (titik sambung) dan ujung akhir (FDT) tetap."""
+    import math
+    if not feeder or len(feeder) < 2 or not g or len(g) < 3:
+        return g
+    k = math.cos(math.radians(g[0][1]))
+    m = lambda p: (p[0] * 111320.0 * k, p[1] * 110574.0)
+    b = lambda q: (q[0] / (111320.0 * k), q[1] / 110574.0)
+    F = [m(p) for p in feeder]
+    G = [m(p) for p in g]
+    cum = [0.0]
+    for i in range(1, len(F)):
+        cum.append(cum[-1] + math.hypot(F[i][0] - F[i - 1][0], F[i][1] - F[i - 1][1]))
+
+    def proy(q):
+        best = None
+        for i in range(len(F) - 1):
+            a, c = F[i], F[i + 1]
+            dx, dy = c[0] - a[0], c[1] - a[1]
+            L2 = dx * dx + dy * dy
+            t = 0.0 if L2 <= 0 else max(0.0, min(1.0, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / L2))
+            d = math.hypot(q[0] - a[0] - t * dx, q[1] - a[1] - t * dy)
+            if best is None or d < best[0]:
+                best = (d, cum[i] + t * math.sqrt(L2))
+        return best
+
+    d0, s_tap = proy(G[0])
+    if d0 > tol_m:
+        return g
+    j, jarak = 0, 0.0
+    for i in range(1, len(G)):
+        if proy(G[i])[0] > tol_m:
+            break
+        jarak += math.hypot(G[i][0] - G[i - 1][0], G[i][1] - G[i - 1][1])
+        j = i
+    if j >= len(G) - 1:                 # seluruh kabel menyusuri feeder: rapatkan sampai titik sebelum FDT
+        j = len(G) - 2
+        jarak = sum(math.hypot(G[i][0] - G[i - 1][0], G[i][1] - G[i - 1][1]) for i in range(1, j + 1))
+    if jarak < min_m or j < 1:
+        return g
+    s_lepas = proy(G[j])[1]
+
+    def titik_s(s):
+        for i in range(len(F) - 1):
+            if cum[i] <= s <= cum[i + 1]:
+                L = cum[i + 1] - cum[i]
+                t = 0.0 if L <= 0 else (s - cum[i]) / L
+                return (F[i][0] + t * (F[i + 1][0] - F[i][0]), F[i][1] + t * (F[i + 1][1] - F[i][1]))
+        return F[-1] if s > cum[-1] else F[0]
+    lo, hi = min(s_tap, s_lepas), max(s_tap, s_lepas)
+    sub = [titik_s(lo)] + [F[i] for i in range(len(F)) if lo < cum[i] < hi] + [titik_s(hi)]
+    if s_tap > s_lepas:
+        sub = list(reversed(sub))
+    # sambungan dari garis feeder ke jalur menuju FDT dihaluskan setempat (+-20 m), bagian yang berimpit tetap
+    ekor = G[j + 1:]
+    acc, k0 = 0.0, len(sub) - 1
+    while k0 > 1 and acc < 20.0:
+        acc += math.hypot(sub[k0][0] - sub[k0 - 1][0], sub[k0][1] - sub[k0 - 1][1])
+        k0 -= 1
+    acc, k1 = 0.0, 0
+    while k1 < len(ekor) - 1 and acc < 20.0:
+        acc += math.hypot(ekor[k1 + 1][0] - ekor[k1][0], ekor[k1 + 1][1] - ekor[k1][1])
+        k1 += 1
+    halus = _lengkung(sub[k0:] + ekor[:k1 + 1])
+    xy = sub[:k0] + halus + ekor[k1 + 1:]
+    return [g[0]] + [b(q) for q in xy[1:-1]] + [g[-1]]
+
+
 def _ke_kabel(p, kabel, tol_m=8.0):
     """Titik (hanger/tiang) digeser ke garis kabel final terdekat bila jaraknya <= tol_m, supaya duduk di atas kabel."""
     import math
@@ -504,6 +574,12 @@ def _isi_traksi(w, h, prm, ke_ll):
     # bentuk akhir kabel baru (dirapikan + dilengkungkan sekali); Colo Pole, New Infra, hanger dan tiang diambil dari
     # bentuk ini supaya semuanya berimpit persis dengan kabelnya
     kab_final = {c: [_bersihkan_ll(ll) for ll in daftar] for c, daftar in kab_baru.items()}
+    # COLO CABLE digambar sekali; bagian kabel baru yang menyusuri tiang feeder yang sama dirapatkan ke garis itu
+    colo_final = None
+    if sel and sel.get("colo_xy") and len(sel["colo_xy"]) >= 2:
+        colo_final = _bersihkan_ll([ke_ll(p) for p in rapikan_garis(sel["colo_xy"])])
+        if not baru:
+            kab_final = {c: [_rapat_ke_feeder(g, colo_final) for g in daftar] for c, daftar in kab_final.items()}
     semua_final = [g for daftar in kab_final.values() for g in daftar]
     tiang = {6: [], 7: [], 9: []}
     if rute and float(prm.get("tiang_m") or 0) >= 10:
@@ -548,7 +624,8 @@ def _isi_traksi(w, h, prm, ke_ll):
             # nama 'COLO CABLE', keterangan = nama traksi feeder yang dipakai (seperti hasil desainer)
             if sel and sel.get("colo_xy"):
                 tr = re.sub(r"\.km[lz]$", "", str(sel.get("traksi") or sel.get("nama") or ""), flags=re.I)
-                w.garis("COLO CABLE", [ke_ll(p) for p in rapikan_garis(sel["colo_xy"])], "infra_COLO_CABLE", tr)
+                w.garis("COLO CABLE", colo_final or [ke_ll(p) for p in rapikan_garis(sel["colo_xy"])],
+                        "infra_COLO_CABLE", tr, final=bool(colo_final))
         w.folder("Collo Cable", colo)
         w.folder("UG Utilities", lambda: (w.folder("Manhole", lambda: None), w.folder("Handhole", lambda: None)))
     w.folder("Cable", cable)
