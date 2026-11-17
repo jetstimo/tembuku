@@ -159,8 +159,12 @@ header img{width:44px;height:44px}header h1{font:800 20px var(--display);letter-
 header h1 span{color:var(--emas)}header small{opacity:.78}
 /* kawung motif from Javanese batik, drawn very faintly behind the list */
 aside{background-color:#fffdf8;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Cg fill='none' stroke='%23141a46' stroke-opacity='.05' stroke-width='1.2'%3E%3Cellipse cx='20' cy='9' rx='5' ry='8'/%3E%3Cellipse cx='20' cy='31' rx='5' ry='8'/%3E%3Cellipse cx='9' cy='20' rx='8' ry='5'/%3E%3Cellipse cx='31' cy='20' rx='8' ry='5'/%3E%3C/g%3E%3C/svg%3E")}
-.wrap{display:grid;grid-template-columns:380px 1fr;height:calc(100vh - 70px)}
-aside{overflow:auto;border-right:1px solid var(--line)}
+html,body{height:100%}body{display:flex;flex-direction:column;overflow:hidden}header{flex:none}
+.wrap{display:grid;grid-template-columns:minmax(260px,380px) minmax(0,1fr);flex:1 1 auto;min-height:0;height:auto}
+aside{overflow:auto;border-right:1px solid var(--line);min-height:0;min-width:0}
+@media (max-width:820px){body{overflow:auto;height:auto}.wrap{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto}
+aside{max-height:45vh;border-right:0;border-bottom:1px solid var(--line)}main{height:92vh}header{padding:10px 16px}
+header h1{font-size:17px}.det{padding:12px 16px}table{display:block;overflow-x:auto}}
 .lead{padding:14px 16px;border-bottom:1px solid var(--line);font-size:13px;color:var(--mut)}
 .chips{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--line)}
 .chip{border:1px solid var(--line);border-radius:999px;padding:3px 10px;cursor:pointer;font-size:12px;background:#fff}
@@ -171,7 +175,8 @@ aside{overflow:auto;border-right:1px solid var(--line)}
 .COLO{background:var(--teal)}.COLO_CEK{background:var(--amber)}.COLO_MANUAL{background:#7c3aed}.FEEDER_BARU{background:var(--blue)}.PERLU_MANUAL{background:var(--red)}
 .BATAS{background:#7c3aed}
 .leaflet-container{background:#f1eee4;font-family:var(--sans)}
-main{display:grid;grid-template-rows:56% 44%;min-width:0}#peta{min-height:0}
+main{display:grid;grid-template-rows:minmax(0,56fr) minmax(0,44fr);min-width:0;min-height:0;overflow:hidden}
+#peta{min-height:0;height:100%;width:100%}
 .det{overflow:auto;padding:14px 20px;background:#fff;border-top:1px solid var(--line)}
 .det h2{font:800 18px var(--display);margin:0 0 4px}.why{background:#eef7f5;border-left:4px solid var(--teal);padding:8px 12px;margin:8px 0;border-radius:4px}
 .warn{background:#fff7e6;border-left:4px solid var(--amber);padding:6px 12px;margin:6px 0;border-radius:4px;font-size:13px}
@@ -257,6 +262,13 @@ map.on("baselayerchange",e=>{setInfo("");if(e.layer===esriL){tglKunci="";tglEsri
  if(e.layer===cdseL)setInfo("Satelit bebas awan Copernicus: kuartal terbaru, bagian yang masih berawan diisi kuartal sebelumnya ("+jendela().replace("/"," s.d. ")+")")});
 map.on("moveend",tglEsri);
 let grp=L.featureGroup().addTo(map);
+/* ukuran peta dibaca ulang sebelum zoom: tanpa ini peta yang dibuat saat tata letak belum selesai tampil terpotong
+   (zoom terlalu jauh, kanvas bergeser). Juga dijalankan ulang tiap ukuran jendela/panel berubah. */
+function pas(){map.invalidateSize(false);const b=grp.getLayers().length?grp.getBounds():null;
+ if(b&&b.isValid())map.fitBounds(b.pad(.15),{maxZoom:18,animate:false});else if(D[cur])map.setView(D[cur].ll,16)}
+let _pt=null;const _ulang=()=>{clearTimeout(_pt);_pt=setTimeout(pas,120)};
+if(window.ResizeObserver)new ResizeObserver(_ulang).observe(document.getElementById("peta"));
+window.addEventListener("resize",_ulang);window.addEventListener("load",()=>setTimeout(pas,50));
 function show(i){cur=i;rList();const d=D[i];grp.clearLayers();
 d.kandidat.forEach(k=>{L.polyline(k.kabel,{color:k.lolos?"#f59e0b":"#9ca3af",weight:k.lolos?4:2,opacity:.8}).bindTooltip(`#${k.no} ${esc(k.nama)} · ${esc(k.ketkap)}`).addTo(grp);
 L.circleMarker(k.tap,{radius:5,color:"#111",fillColor:k.lolos?"#f59e0b":"#d1d5db",fillOpacity:1,weight:1}).bindTooltip("Titik sambung kandidat #"+k.no).addTo(grp)});
@@ -266,7 +278,7 @@ if(d.uji){d.uji.desain_ll.forEach(l=>L.polyline(l,{color:"#111",weight:3,dashArr
 d.uji.colo_ll.forEach(l=>L.polyline(l,{color:"#111",weight:2,opacity:.5,dashArray:"2 6"}).bindTooltip("Desain desainer (colo cable)").addTo(grp))}
 L.circleMarker(d.ll,{radius:9,color:"#fff",weight:3,fillColor:"#c2410c",fillOpacity:1}).bindTooltip("FDT "+esc(d.kode),{permanent:true,direction:"top"}).addTo(grp);
 if(d.pop_ll)L.circleMarker(d.pop_ll,{radius:8,color:"#fff",weight:3,fillColor:"#1d4ed8",fillOpacity:1}).bindTooltip("POP "+esc(d.pop)).addTo(grp);
-try{map.fitBounds(grp.getBounds().pad(.15))}catch(e){map.setView(d.ll,16)}
+pas();
 const nm=d.nomor;document.getElementById("det").innerHTML=`<h2>${esc(d.kode)} <span class="tag ${d.kep}">${NAMA[d.kep]}</span></h2>
 <div class="kpi"><div>Folder compile<b>F${nm.feeder}_T${nm.t}</b></div><div>Kabel baru<b>${d.baru!=null?idn(d.baru)+" m":"-"}</b></div><div>Jika feeder baru dari POP<b>${d.fb!=null?idn(d.fb)+" m":"-"}</b></div>
 <div>Splitter<b>${d.splitter?d.splitter+"x1x"+d.rasio:"-"}</b></div><div>Kabel yang diperiksa<b>${d.nkabel}</b></div><div>Data jalan<b>${d.jalan?"ada":"tidak ada"}</b></div></div>

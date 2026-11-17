@@ -24,7 +24,7 @@
 import math
 import re
 
-from . import geo, osm, profil, validasi
+from . import geo, osm, profil
 from .teks import T, gabung, m, km, kali, db
 from .graf import Graf, INF
 
@@ -695,17 +695,28 @@ def _penyeberangan(rute, besar, sisi=8.0):
     ketemu = []
 
     def arah_jalan(p):
-        best = None
+        """Arah jalan utama yang MENEMBUS simpul ini (persimpangan bisa lebih dari satu). Jalan yang berakhir di simpul
+        (mulut gang di pertigaan) bukan penyeberangan; jalan yang di OSM terpotong dua di simpul tetap dihitung tembus."""
+        lengan = []                      # arah keluar dari simpul untuk tiap ruas jalan
         for xy, kb in zip(besar, kotak):
             if not (kb[0] - 3 <= p[0] <= kb[2] + 3 and kb[1] - 3 <= p[1] <= kb[3] + 3):
                 continue
             nb = geo.terdekat_di_garis(p, xy)
-            if nb and nb[0] <= 2.0 and (best is None or nb[0] < best[0]):
-                best = (nb[0], geo.satuan(xy[nb[1]], xy[nb[1] + 1]))
-        return best[1] if best else None
+            if not nb or nb[0] > 2.0:
+                continue
+            i, q = nb[1], nb[3]
+            maju = next((xy[j] for j in range(i + 1, len(xy)) if math.hypot(xy[j][0] - q[0], xy[j][1] - q[1]) > 2.0), None)
+            mundur = next((xy[j] for j in range(i, -1, -1) if math.hypot(xy[j][0] - q[0], xy[j][1] - q[1]) > 2.0), None)
+            lengan += [geo.satuan(q, x) for x in (maju, mundur) if x is not None]
+        out = []
+        for k, u in enumerate(lengan):
+            for v in lengan[k + 1:]:
+                if u[0] * v[0] + u[1] * v[1] < -0.8:          # dua lengan berlawanan = jalan tembus
+                    out.append(u)
+        return out
 
-    def sinus(u, v):
-        return abs(u[0] * v[1] - u[1] * v[0])
+    def silang(u, v):
+        return u[0] * v[1] - u[1] * v[0]
     for i, (a, b) in enumerate(zip(titik, titik[1:])):
         if (a, b) not in baru or a == b:
             continue
@@ -717,11 +728,15 @@ def _penyeberangan(rute, besar, sisi=8.0):
                 hit = geo.potong_segmen(a, b, c, d)
                 if hit and 0.02 < hit[0] < 0.98 and hit[1] >= 0.5:
                     ketemu.append(ch_seg[i] + hit[0] * math.hypot(b[0] - a[0], b[1] - a[1]))
-        # (2) memotong tepat di simpul jalan: arah masuk dan keluar sama-sama melintang terhadap jalan utama
+        # (2) memotong tepat di simpul jalan: arah masuk dan keluar sama-sama melintang terhadap salah satu jalan utama
+        # yang lewat di simpul itu, dan pindah dari satu sisi jalan ke sisi lainnya (bukan masuk lalu balik ke sisi asal)
         if i + 2 < len(titik) and (b, titik[i + 2]) in baru and b != titik[i + 2]:
-            rj = arah_jalan(b)
-            if rj and sinus(geo.satuan(a, b), rj) >= 0.5 and sinus(geo.satuan(b, titik[i + 2]), rj) >= 0.5:
-                ketemu.append(ch_seg[i + 1])
+            u_in, u_out = geo.satuan(a, b), geo.satuan(b, titik[i + 2])
+            for rj in arah_jalan(b):
+                s1, s2 = silang(u_in, rj), silang(u_out, rj)
+                if abs(s1) >= 0.5 and abs(s2) >= 0.5 and s1 * s2 > 0:
+                    ketemu.append(ch_seg[i + 1])
+                    break
     out, akhir = [], None
     for ch in sorted(ketemu):
         if akhir is not None and ch - akhir < 25.0:
@@ -1124,6 +1139,17 @@ def _nilai_kandidat(G, k, pilihan, prevA, distB, prevB, prm, P, byid, tanda, kor
             gagal.append(T("jarak POP ke FDT lewat kabel 48 core ini %s, lebih dari batas %s untuk kabel 48 core",
                            "the POP-to-FDT route via this 48-fibre cable is %s, over the %s limit for 48 fibres")
                          % (km(jalur_serat), km(batas_m)))
+    # arahan finalisasi: ukuran kabel baru mengikuti sisa tube kosong di jalur yang dipakai
+    if prm.get("kabel_dari_sisa_tube", True) and st in ("LOLOS", "BELUM_TERVERIFIKASI") and info.get("kelompok"):
+        n_bebas = len(info.get("bebas") or [])
+        if info["kelompok"] == "96F" and n_bebas:
+            batas_tube = int(prm.get("batas_tube_kabel_48", 4))
+            core_cabang = 48 if n_bebas <= batas_tube else 96
+            alasan.append(T("kabel baru %d core karena sisa tube kosong di jalur 96F tinggal %d (kabel 48 bila <= %d tube)",
+                            "the new cable has %d fibres because %d free tubes are left on the 96F path (48 fibres at "
+                            "<= %d tubes)") % (core_cabang, n_bebas, batas_tube))
+        elif info["kelompok"] == "48F":
+            core_cabang = 48
     if st == "PENUH":
         gagal.append(T("tidak ada tube kosong (%s)", "no free tube (%s)") % teks)
     elif st == "BELUM_TERVERIFIKASI":
@@ -1134,6 +1160,21 @@ def _nilai_kandidat(G, k, pilihan, prevA, distB, prevB, prm, P, byid, tanda, kor
                        "this feeder runs away from the FDT (%d° off, at most %d°)") % (
             round(math.degrees(math.acos(max(-1.0, min(1.0, cosv))))) if cosv is not None else 180,
             round(math.degrees(math.acos(max(-1.0, min(1.0, prm["cos_arah_min"])))))))
+    # arahan finalisasi: FDT di utara POP memakai feeder yang keluar ke utara dari POP, FDT di selatan feeder ke selatan.
+    # Sisi feeder = posisi titik sambungnya terhadap POP (bagian feeder yang benar-benar dipakai). Jalur awal di dekat
+    # POP tidak dipakai: banyak feeder keluar POP sedikit ke selatan lalu berbelok ke utara (Palembang).
+    # Koordinat lokal berpusat di FDT, jadi utara-selatan FDT terhadap POP = -P[1].
+    if prm.get("arah_utara_selatan", True) and P is not None:
+        tol = float(prm.get("toleransi_utara_selatan_m", 150.0))
+        dy_fdt = -P[1]
+        dy_feeder = G.xy[v][1] - P[1]
+        if abs(dy_fdt) > tol and abs(dy_feeder) > tol and dy_fdt * dy_feeder < 0:
+            gagal.append(T("FDT ada di %s POP, tetapi feeder ini keluar ke arah %s dari POP (arahan: FDT di utara memakai "
+                           "feeder ke utara, FDT di selatan feeder ke selatan)",
+                           "the FDT is %s of the POP but this feeder leaves the POP to the %s (rule: an FDT in the north "
+                           "uses a feeder going north, an FDT in the south a feeder going south)")
+                         % ((T("utara", "north"), T("selatan", "south")) if dy_fdt > 0 else
+                            (T("selatan", "south"), T("utara", "north"))))
     di_pop = P is not None and math.hypot(G.xy[v][0] - P[0], G.xy[v][1] - P[1]) <= JARAK_POP_M
     # aturan 6 km juga menentukan kelompok: <= 6 km cabang 48F (T9-T12), > 6 km kabel 96F (T1-T8)
     perlu = "48F" if jalur_serat <= batas_m else "96F"
@@ -1164,7 +1205,9 @@ def _nilai_kandidat(G, k, pilihan, prevA, distB, prevB, prm, P, byid, tanda, kor
         tf_xy = [L.ke(tf["ll"]) for tf in data.titik_feeder(k.get("pop_nama") or "", fe) if tf["jenis"] == "closure"]
     splice = 3 + _closure_di_jalur(colo_xy, tf_xy)
     bud = link_budget(feeder_km + pjg / 1000.0, prm, splice=splice)
-    if bud["margin_db"] < 0:
+    # nilai komponen = nilai MAKSIMUM standar (kasus terburuk); margin cadangan kebijakan hanya syarat tolak bila diatur
+    batas_tolak = 0.0 if prm.get("margin_wajib", False) else -float(prm["margin_db"])
+    if bud["margin_db"] < batas_tolak:
         gagal.append(T("sinyal terlalu lemah saat sampai di pelanggan (redaman %s, batas %s)",
                        "the signal would be too weak at the customer (loss %s, limit %s)") % (
             db(bud["total_db"]), db(prm["kelas_olt_db"])))
@@ -1207,7 +1250,11 @@ def _nilai_kandidat(G, k, pilihan, prevA, distB, prevB, prm, P, byid, tanda, kor
     # rasio colo: bagian jalur kabel baru yang menumpang tiang existing (PDF: higher colo ratio is better)
     tiang = sum(geo.panjang(s[2]) for s in rute["segmen"] if s[0] in (TIANG_NASIONAL, TIANG_COMPILE))
     colo_rasio = (tiang / pjg) if pjg > 1.0 else 1.0
-    skor = c * (1.0 + (0.5 if st == "BELUM_TERVERIFIKASI" else 0) + (0.3 if colo_m is None else 0) +
+    # biaya relatif (evaluasi atasan 16-11-2026): colo cable 1, colo pole 20, new infra 100 per meter
+    infra_baru = max(0.0, pjg_est - tiang)
+    biaya_rel = ((colo_m if colo_m is not None else feeder_km * 1000.0) * float(prm.get("biaya_colo_cable", 1.0)) +
+                 tiang * float(prm.get("biaya_colo_pole", 20.0)) + infra_baru * float(prm.get("biaya_new_infra", 100.0)))
+    skor = biaya_rel * (1.0 + (0.5 if st == "BELUM_TERVERIFIKASI" else 0) + (0.3 if colo_m is None else 0) +
                 (1.0 if gagal else 0))
     llk = k["ll"]
     if len(llk) > 400:
@@ -1228,7 +1275,8 @@ def _nilai_kandidat(G, k, pilihan, prevA, distB, prevB, prm, P, byid, tanda, kor
             "colo_m": None if colo_m is None else round(colo_m), "colo_xy": colo_xy, "jalur_serat_m": round(jalur_serat),
             "rute": rute, "budget": bud, "gagal": gagal, "catatan": alasan, "skor": skor, "koridor_sendiri": koridor,
             "tap_slack": tap_slack, "core_cabang": core_cabang, "lolos": not gagal and st == "LOLOS", "biaya": c,
-            "kelompok_sesuai": sesuai, "di_pop": di_pop, "colo_rasio": round(colo_rasio, 3)}
+            "kelompok_sesuai": sesuai, "di_pop": di_pop, "colo_rasio": round(colo_rasio, 3),
+            "biaya_relatif": round(biaya_rel), "colo_pole_m": round(tiang), "new_infra_m": round(infra_baru)}
 
 
 def _rakit_rute(G, prev, tujuan, byid, faktor_bantu=1.35):
@@ -1262,7 +1310,10 @@ def link_budget(km, prm, splice=6):
 
 
 def _setara(a, b):
-    """Kabel baru dua kandidat dianggap setara bila selisihnya < 5 % dan < 100 m."""
+    """Dua kandidat setara bila biaya relatifnya beda <= 5 % (model biaya atasan) atau, tanpa biaya, kabel barunya beda
+    < 5 % dan < 100 m."""
+    if a.get("biaya_relatif") is not None and b.get("biaya_relatif") is not None:
+        return abs(a["biaya_relatif"] - b["biaya_relatif"]) <= TOLERANSI_SETARA * min(a["biaya_relatif"], b["biaya_relatif"])
     return abs(a["kabel_baru_m"] - b["kabel_baru_m"]) <= max(100.0, TOLERANSI_SETARA * min(a["kabel_baru_m"],
                                                                                          b["kabel_baru_m"]))
 
@@ -1298,7 +1349,7 @@ def _urut_setara(lolos, utamakan=False, prm=None):
         batas = terbaik["kabel_baru_m"] + max(tol, 0.15 * terbaik["kabel_baru_m"])
         ada = [d for d in lolos if d.get("tap_slack") and d["kabel_baru_m"] <= batas]
         if ada:
-            ada.sort(key=lambda d: (d["kabel_baru_m"], _kunci_setara(d)))
+            ada.sort(key=lambda d: (d.get("biaya_relatif", d["kabel_baru_m"]), _kunci_setara(d)))
             terbaik = ada[0]
             terbaik["naik_slack"] = True
     setara = [d for d in lolos if _setara(d, terbaik)]
@@ -1367,10 +1418,17 @@ def _putuskan(h, prm):
         inf = k.get("kap_info") or {}
         bud = k.get("budget") or {}
         h["alasan"].append(T("Alasannya: kabel %s masih punya tube kosong, arahnya menuju FDT, dan kekuatan sinyal sampai "
-                             "pelanggan masih dalam batas (redaman %s, batasnya %s).",
+                             "pelanggan masih dalam batas (redaman %s, batasnya %s; ditambah margin cadangan %s).",
                              "Why: cable %s still has a free tube, runs toward the FDT, and the signal at the customer "
-                             "is within the limit (loss %s, limit %s).") % (
-            k["nama"] or k["id"], db(bud.get("total_db") or 0), db(prm["kelas_olt_db"])))
+                             "is within the limit (loss %s, limit %s; plus a reserve margin of %s).") % (
+            k["nama"] or k["id"], db((bud.get("total_db") or 0) - prm["margin_db"]), db(prm["kelas_olt_db"]),
+            db(prm["margin_db"])))
+        if k.get("biaya_relatif") is not None:
+            h["alasan"].append(T("Biaya relatif paling murah: %s (colo cable %s x%s, colo pole %s x%s, new infra %s x%s).",
+                                 "Lowest relative cost: %s (colo cable %s x%s, colo pole %s x%s, new infra %s x%s).") % (
+                "{:,}".format(k["biaya_relatif"]).replace(",", "."), m(k.get("colo_m") or 0),
+                prm.get("biaya_colo_cable", 1), m(k.get("colo_pole_m") or 0), prm.get("biaya_colo_pole", 20),
+                m(k.get("new_infra_m") or 0), prm.get("biaya_new_infra", 100)))
         if k.get("tap_slack"):
             h["alasan"].append(T("Kabel baru disambung di %s.", "The new cable is joined at %s.") % label_tap(k["tap_slack"]))
         if k.get("naik_slack"):
@@ -1433,7 +1491,16 @@ def _putuskan(h, prm):
                              "by hand."))
     sel = h.get("terpilih")
     bud = (sel or {}).get("budget") or {}
-    if sel and bud.get("margin_db") is not None and 0 <= bud["margin_db"] < MARGIN_TIPIS_DB:
+    if sel and bud.get("margin_db") is not None and bud["margin_db"] < 0:
+        h["peringatan"].append(T("Redaman sinyal %s: masih di bawah batas kelas GPON %s dengan nilai komponen maksimum standar, "
+                                 "tetapi margin cadangan %s tidak utuh (sisa %s). Ukur redaman di lapangan setelah "
+                                 "penyambungan.",
+                                 "Signal loss %s: within the GPON class limit %s with maximum standard component values, "
+                                 "but the %s reserve margin is not complete (%s left). Measure the loss on site after "
+                                 "splicing.") % (
+            db(bud["total_db"] - prm["margin_db"]), db(prm["kelas_olt_db"]), db(prm["margin_db"]),
+            db(prm["margin_db"] + bud["margin_db"])))
+    elif sel and bud.get("margin_db") is not None and 0 <= bud["margin_db"] < MARGIN_TIPIS_DB:
         h["peringatan"].append(T("Redaman sinyal hampir di batas (%s dari batas %s, sisa %s). Hitungan ini memakai nilai "
                                  "standar, jadi ukur di lapangan atau pastikan kelas perangkat optiknya sebelum dibangun.",
                                  "Signal loss is close to the limit (%s of %s, %s to spare). The figure uses standard "

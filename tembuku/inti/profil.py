@@ -32,13 +32,37 @@ BAWAAN = {
                             "didahulukan. Bawaan Tidak: redaman ditentukan panjang jalur, bukan jumlah serat (ITU-T G.652/G.984.2), "
                             "dan uji 213 desain 4 kota: folder F/T sama 54 % bila Tidak vs 36 % bila Ya, kabel baru 421 vs 563 km. "
                             "Larangan cabang 48F lebih dari 6 km (batas_48f_km) tetap berlaku"),
-    "toleransi_slack_antar_m": (600, "DATA", "PDF 3.3: titik sambung di slack, closure atau ujung kabel existing didahulukan bila kabel "
+    "biaya_colo_cable": (1.0, "KEBIJAKAN", "Evaluasi atasan 16-11-2026: biaya relatif per meter menumpang kabel feeder yang ada "
+                         "(colo cable) = 1"),
+    "biaya_colo_pole": (20.0, "KEBIJAKAN", "Evaluasi atasan 16-11-2026: kabel baru di tiang yang sudah ada (colo pole) = 20 kali "
+                        "colo cable per meter"),
+    "biaya_new_infra": (100.0, "KEBIJAKAN", "Evaluasi atasan 16-11-2026: kabel baru dengan tiang baru (new infra) = 5 kali colo "
+                        "pole = 100 kali colo cable per meter. Kandidat yang lolos diurutkan dari biaya termurah"),
+    "kabel_dari_sisa_tube": (True, "KEBIJAKAN", "Arahan finalisasi: ukuran kabel baru dari feeder ke FDT mengikuti sisa tube "
+                             "kosong. Menumpang jalur 96F (T1-T8): sisa <= batas_tube_kabel_48 tube -> kabel 48, lebih -> "
+                             "kabel 96. Jalur 48F (T9-T12) -> kabel 48"),
+    "batas_tube_kabel_48": (4, "KEBIJAKAN", "Sisa tube kosong paling banyak untuk kabel 48 (lebih dari ini kabel 96)"),
+    "arah_utara_selatan": (True, "KEBIJAKAN", "Arahan finalisasi: FDT di utara POP hanya memakai feeder yang keluar ke arah "
+                           "utara dari POP, FDT di selatan hanya feeder ke arah selatan (dan sebaliknya tidak boleh)"),
+    "toleransi_utara_selatan_m": (150.0, "KEBIJAKAN", "FDT atau feeder yang beda utara-selatannya dari POP kurang dari ini "
+                                  "dianggap sejajar POP (aturan utara/selatan tidak diterapkan)"),
+    "tulis_hanger": (True, "KEBIJAKAN", "Ya = tulis titik hanger/slack baru (tiap hanger_m, di titik sambung dan di FDT), "
+                     "seperti template APD dan versi 1.4.4"),
+    "tulis_otb_eksisting": (True, "KEBIJAKAN", "Ya = tulis titik 'OTB Existing' dan OLT di POP saat menumpang feeder yang "
+                            "ada, sebagai penanda ujung awal kabel (seperti versi 1.4.4)"),
+    "tulis_kmz_analisis": (False, "KEBIJAKAN", "Ya = tulis juga KMZ pendamping berakhiran _ANALISIS (kandidat, titik sambung, "
+                           "garis bantu). Bawaan Tidak: isinya sudah ada di laporan HTML dan layer QGIS"),
+    "margin_wajib": (False, "KEBIJAKAN", "Ya = margin cadangan (margin_db) ikut menjadi syarat tolak. Bawaan Tidak: nilai "
+                     "komponen sudah nilai MAKSIMUM standar (kasus terburuk), jadi kandidat hanya ditolak bila redaman tanpa "
+                     "margin melewati batas kelas GPON; bila margin cadangan tidak cukup diberi tanda ukur di lapangan"),
+    "toleransi_slack_antar_m": (6000, "KEBIJAKAN", "Evaluasi atasan 16-11-2026: slack/closure existing dari compile dipakai sebagai "
+                                "titik sambung (titik branching). PDF 3.3: titik sambung di slack, closure atau ujung kabel existing didahulukan bila kabel "
                                 "barunya paling banyak sekian meter (atau 15 %) lebih panjang. Closure di tengah kabel tetap bisa "
                                 "dipasang (midspan access, panduan pabrikan), jadi menambah kabel berkilometer demi slack tidak "
                                 "sepadan; titik sambung tengah kabel diberi tanda Perlu dicek. Uji 213 desain: 300 m 421 km / 99 "
                                 "perlu dicek; 600 m 425 km / 92 (F/T sama tertinggi); 1000 m 434 km / 81; selalu 481 km / 60. "
                                 "6000 = ikuti PDF apa adanya"),
-    "slack_min_kabel_m": (150, "DATA", "Prioritas titik sambung di slack/closure/ujung kabel hanya berlaku bila kabel baru kandidat "
+    "slack_min_kabel_m": (0, "KEBIJAKAN", "Prioritas titik sambung di slack/closure/ujung kabel hanya berlaku bila kabel baru kandidat "
                           "terbaik paling sedikit sekian meter. FDT yang menempel di kabel feeder disambung di dekat FDT, "
                           "seperti desain nyata"),
     "kelas_jalan_hindari": ("pedestrian,footway,path,steps,cycleway,bridleway,motorway,motorway_link", "KEBIJAKAN",
@@ -51,7 +75,7 @@ BAWAAN = {
                     "koridor kabel/tiang feeder itu sendiri (kesesuaian arah feeder terhadap cluster)"),
     "tap_slack_m": (10, "KEBIJAKAN", "Titik sambung dianggap berada di slack/closure existing bila jaraknya <= sekian meter (0-5 m kuat, "
                     "5-10 m perlu dicek, > 10 m bukan slack itu)"),
-    "tap_slack_toleransi_m": (150, "KEBIJAKAN", "Titik sambung dipindah ke slack/closure existing terdekat bila kabel barunya paling banyak "
+    "tap_slack_toleransi_m": (6000, "KEBIJAKAN", "Titik sambung dipindah ke slack/closure existing terdekat bila kabel barunya paling banyak "
                               "sekian meter lebih panjang daripada titik sambung bebas"),
     "hanger_m": (300, "KEBIJAKAN", "Jarak antar titik hanger/slack di sepanjang kabel baru, dihitung dari awal penarikan"),
     "detour_lurus_maks_m": (1000, "KEBIJAKAN", "Batas memutar (detour_maks) hanya diuji bila jarak lurus titik sambung ke FDT kurang dari ini; "
@@ -70,7 +94,8 @@ BAWAAN = {
                          "langsung dari POP. Dikalibrasi pada 17 traksi riil Bitung & Tomohon (menumpang <= 1,23; feeder baru "
                          ">= 1,25); keputusan dalam +-0,05 dari ambang ditandai BATAS untuk ditinjau"),
     "zona_batas": (0.05, "KEBIJAKAN", "Hasil yang selisihnya kurang dari 0,05 dari batas panjang jalur ditandai 'perlu ditinjau'"),
-    "faktor_tiang_eksisting": (0.8, "KEBIJAKAN", "Biaya relatif per meter menumpang tiang yang sudah ada"),
+    "faktor_tiang_eksisting": (0.2, "KEBIJAKAN", "Bobot jalur per meter menumpang tiang yang sudah ada dibanding jalan (tiang baru = 1): "
+                               "colo pole 20 / new infra 100 = 0,2 (evaluasi atasan 16-11-2026)"),
     "faktor_akses": (1.2, "KEBIJAKAN", "Sambungan lurus FDT/POP ke jaringan terdekat (<= 150 m)"),
     "faktor_bebas": (4.0, "KEBIJAKAN", "Bobot biaya garis bantu lurus saat data jalan ADA: garis bantu hanya dipakai bila jalur jalan/tiang "
                      "lebih dari 4x lebih panjang (desain nyata mengikuti jalan 100 %). Tanpa data jalan dipakai 1,35"),
@@ -86,7 +111,8 @@ BAWAAN = {
     "core_cabang": (48, "DATA", "Kabel cabang titik sambung->FDT: 48C (pola semua desain menumpang di data riil)"),
     "core_feeder_baru": (96, "DATA", "Feeder baru: OTB 144 + 144C ke Closure 144 (slack) lalu 96C (pola T1 di data riil)"),
     "stub_144_m": (75, "DATA", "Panjang 144C dari OTB ke Closure 144: data riil 40-93 m"),
-    "closure_tap": ("auto", "DATA", "Closure di titik sambung: 'auto' = sebesar kabel yang disambung (144/96/48; closure existing dipakai "
+    "closure_tap": (96, "KEBIJAKAN", "Evaluasi atasan 16-11-2026: setiap titik sambung baru di slack otomatis New Closure 96. "
+                    "'auto' = sebesar kabel yang disambung (144/96/48; closure existing dipakai "
                     "bila titik sambungnya di closure existing), atau angka tetap mis. 96"),
     "slack_m": (10, "STANDAR", "ITU-T L.163 (11/2018): sisakan panjang kabel >= 10 m per ujung untuk penyambungan "
                 "(L.163 juga menyarankan ~10 % lebih untuk kabel permukaan; panjang rute Tembuku sudah dikalibrasi)"),
@@ -207,10 +233,41 @@ LABEL_ID = {
     "splitter_fat_db": "Redaman splitter 1:8 (dB)", "konektor_n": "Jumlah konektor", "konektor_db": "Redaman per konektor (dB)",
     "splice_db": "Redaman per sambungan fusi (dB)", "margin_db": "Margin cadangan (dB)",
     "kelas_olt_db": "Batas redaman perangkat GPON (dB)", "distribusi_km": "Panjang distribusi ke pelanggan (km)",
+    "biaya_colo_cable": "Biaya relatif colo cable per meter", "biaya_colo_pole": "Biaya relatif colo pole per meter",
+    "biaya_new_infra": "Biaya relatif new infra per meter", "margin_wajib": "Margin cadangan menjadi syarat tolak",
+    "tulis_kmz_analisis": "Tulis KMZ bahan tinjauan (_ANALISIS)",
+    "tulis_hanger": "Tulis titik hanger/slack baru", "tulis_otb_eksisting": "Tulis titik OTB Existing",
+    "kabel_dari_sisa_tube": "Ukuran kabel baru dari sisa tube", "batas_tube_kabel_48": "Sisa tube maksimum untuk kabel 48",
+    "arah_utara_selatan": "Feeder searah utara/selatan dengan FDT", "toleransi_utara_selatan_m": "Toleransi utara/selatan (m)",
 }
 JENIS_ID = {"PDF": "Aturan engineering (PDF 11-11-2026)", "STANDAR": "Standar", "DATA": "Dari desain nyata", "KEBIJAKAN": "Kebijakan", "KEBIJAKAN+DATA": "Kebijakan dan desain nyata"}
 
 PENJELASAN_EN = {
+    "kabel_dari_sisa_tube": ("Branch cable size from free tubes", "On (default): the new cable from the feeder to the "
+                             "FDT is 48 fibres when the 96F tube group (T1-T8) it uses has at most the set number of free "
+                             "tubes left, otherwise 96 fibres; a 48F (T9-T12) branch always gets 48 fibres."),
+    "batas_tube_kabel_48": ("Free tubes for a 48-fibre cable", "Largest number of free tubes for which the new cable is "
+                            "48 fibres; with more free tubes it is 96 fibres."),
+    "arah_utara_selatan": ("Feeder north/south as the FDT", "On (default): an FDT north of the POP only uses a feeder "
+                           "that leaves the POP northward, an FDT south of the POP only a feeder that leaves southward."),
+    "toleransi_utara_selatan_m": ("North/south tolerance (m)", "An FDT or feeder less than this far north or south of "
+                                  "the POP counts as level with the POP, and the north/south rule is not applied."),
+    "tulis_hanger": ("Write new hanger/slack points", "On: write new hanger/slack points every 'hanger distance', at the "
+                     "tap and at the FDT (default on, as in the APD template and version 1.4.4)."),
+    "tulis_otb_eksisting": ("Write the OTB Existing point", "On (default): write 'OTB Existing' and OLT points at the POP "
+                            "when an existing feeder is reused, marking where the cable starts (as in version 1.4.4)."),
+    "tulis_kmz_analisis": ("Write the _ANALISIS review KMZ", "On: also write a companion KMZ ending in _ANALISIS with the "
+                           "candidates, tap points and helper lines. Off (default): the same material is in the HTML "
+                           "report and the QGIS layers."),
+    "biaya_colo_cable": ("Cost: existing feeder cable (per m)", "Relative cost per metre of riding the existing feeder cable "
+                         "from the POP to the tap (colo cable). Reviewer rule of 16 Nov 2026: 1."),
+    "biaya_colo_pole": ("Cost: new cable on existing poles (per m)", "Relative cost per metre of new cable hung on existing "
+                        "poles (colo pole). Reviewer rule: 20 times colo cable."),
+    "biaya_new_infra": ("Cost: new cable on new poles (per m)", "Relative cost per metre of new cable on new poles (new "
+                        "infra). Reviewer rule: 5 times colo pole. Qualifying candidates are ranked from the cheapest."),
+    "margin_wajib": ("Reject on the reserve margin", "Off (default): component losses are already the maximum standard "
+                     "values, so a candidate is rejected only when the loss without the reserve margin is over the GPON "
+                     "class limit; a thin reserve is flagged for site measurement. On: the reserve margin is a hard limit."),
     "radius_cari_m": ("Search radius (m)", "How far around each FDT to look for an existing feeder. The longest branch "
                       "in the real designs is 1,466 m."),
     "tube_per_fdt": ("Tubes per FDT", "Each FDT uses one whole tube (12 fibres)."),
