@@ -80,6 +80,7 @@ class TugasTembuku(QgsTask):
                 self.hasil = s.analisis()
                 self.keluaran = s.simpan(self.folder_keluar, alat="Tembuku - uji akurasi")
             elif self.mode == "batch":
+                s.folder_hasil = self.folder_keluar
                 self.hasil = s.analisis()
                 self.keluaran = s.simpan(self.folder_keluar)
             elif self.mode == "titik":

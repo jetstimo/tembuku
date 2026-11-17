@@ -20,6 +20,10 @@ def jalankan(dlg):
     return (dlg.exec if hasattr(dlg, "exec") else dlg.exec_)()
 
 
+def jalankan_menu(menu, pos):
+    return (menu.exec if hasattr(menu, "exec") else menu.exec_)(pos)
+
+
 QT = QtCore.Qt
 KANAN = e(QT, "DockWidgetArea", "RightDockWidgetArea")
 TUNGGU = e(QT, "CursorShape", "WaitCursor")
@@ -33,3 +37,6 @@ TO_CONTENTS = e(QtWidgets.QHeaderView, "ResizeMode", "ResizeToContents")
 BTN_OK = e(QtWidgets.QDialogButtonBox, "StandardButton", "Ok")
 BTN_CANCEL = e(QtWidgets.QDialogButtonBox, "StandardButton", "Cancel")
 ITEM_EDITABLE = e(QT, "ItemFlag", "ItemIsEditable")
+EXTENDED = e(QtWidgets.QAbstractItemView, "SelectionMode", "ExtendedSelection")
+MENU_KUSTOM = e(QT, "ContextMenuPolicy", "CustomContextMenu")
+TOMBOL_HAPUS = e(QtGui.QKeySequence, "StandardKey", "Delete")

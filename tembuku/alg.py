@@ -73,6 +73,8 @@ class TembukuFolder(QgsProcessingAlgorithm):
             s.muat()
             if uji:
                 s.siapkan_uji()
+            else:
+                s.folder_hasil = keluar
             hasil = s.analisis()
             out = s.simpan(keluar)
         except layanan.Dibatalkan:

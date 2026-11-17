@@ -293,9 +293,12 @@ class PanelTembuku(QtWidgets.QDockWidget):
         s = getattr(self.plugin, "sesi", None)
         ikon = s.ikon_lokal if s is not None and getattr(s, "ikon_lokal", None) else layanan.baca_ikon(self.plugin.cache())
         tulis_kmz.tulis([h], path, self.plugin.prm(), os.path.basename(path)[:-4], ikon_lokal=ikon)
-        pa = (path[:-4] if path.lower().endswith(".kmz") else path) + "_ANALISIS.kmz"
-        tulis_kmz.tulis([h], pa, self.plugin.prm(), os.path.basename(pa)[:-4], ikon_lokal=ikon, analisis=True)
-        self.iface.messageBar().pushSuccess("Tembuku", "KMZ saved: %s (review material: %s)" % (path, os.path.basename(pa)))
+        if self.plugin.prm().get("tulis_kmz_analisis", False):
+            pa = (path[:-4] if path.lower().endswith(".kmz") else path) + "_ANALISIS.kmz"
+            tulis_kmz.tulis([h], pa, self.plugin.prm(), os.path.basename(pa)[:-4], ikon_lokal=ikon, analisis=True)
+            self.iface.messageBar().pushSuccess("Tembuku", "KMZ saved: %s (review material: %s)" % (path, os.path.basename(pa)))
+        else:
+            self.iface.messageBar().pushSuccess("Tembuku", "KMZ saved: %s" % path)
 
     def _buka_html(self):
         if self.keluaran and self.keluaran.get("html"):

@@ -9,7 +9,7 @@ import os
 
 from qgis.core import QgsMapLayerProxyModel, QgsSettings
 from qgis.gui import QgsFileWidget, QgsMapLayerComboBox
-from qgis.PyQt import QtGui, QtWidgets
+from qgis.PyQt import QtCore, QtGui, QtWidgets
 
 from . import layanan, qtc
 from .inti import profil, sumber
@@ -22,6 +22,10 @@ LABEL = {"NASIONAL": "Cable inventory (existing network)", "COMPILE": "Feeder de
          "LAIN": "(ignore this file)"}
 TINGKAT_EN = {V.FATAL: "CANNOT RUN", V.PERBAIKI: "AUTO-CORRECTED", V.PERINGATAN: "CHECK", V.INFO: "NOTE"}
 WARNA = {V.FATAL: "#b91c1c", V.PERBAIKI: "#0e7c7b", V.PERINGATAN: "#b45309", V.INFO: "#5b6b78"}
+
+
+def e_ya():
+    return qtc.e(QtWidgets.QMessageBox, "StandardButton", "Yes")
 
 
 class DialogTembuku(QtWidgets.QDialog):
@@ -52,7 +56,18 @@ class DialogTembuku(QtWidgets.QDialog):
         baris.addWidget(b_tambah)
         lay.addLayout(baris)
         self.tambahan = [p for p in json.loads(self.st.value("tembuku/tambahan", "[]") or "[]") if os.path.exists(p)]
+        # berkas di folder data yang dikeluarkan pengguna dari daftar (tetap ada di disk, hanya tidak dibaca)
+        self.kecuali = [p for p in json.loads(self.st.value("tembuku/kecuali", "[]") or "[]") if os.path.exists(p)]
         self.tabel = QtWidgets.QTableWidget(0, 4)
+        self.tabel.setSelectionBehavior(qtc.SELECT_ROWS)
+        self.tabel.setSelectionMode(qtc.EXTENDED)
+        self.tabel.setContextMenuPolicy(qtc.MENU_KUSTOM)
+        self.tabel.customContextMenuRequested.connect(self._menu_berkas)
+        self.tabel.itemSelectionChanged.connect(self._status_tombol_berkas)
+        a_hapus = qtc.QAction("Remove from list", self.tabel)
+        a_hapus.setShortcut(QtGui.QKeySequence(qtc.TOMBOL_HAPUS))
+        a_hapus.triggered.connect(self._hapus_terpilih)
+        self.tabel.addAction(a_hapus)
         self.tabel.setHorizontalHeaderLabels(["File", "Read as", "Why", "Size"])
         self.tabel.setToolTip("Each file's type is recognised from what is inside it (object shapes, data columns, "
                               "folder layout), not from its name. If one was recognised wrongly, choose the right "
@@ -63,6 +78,25 @@ class DialogTembuku(QtWidgets.QDialog):
         self.tabel.horizontalHeader().setSectionResizeMode(2, qtc.STRETCH)
         self.tabel.horizontalHeader().setSectionResizeMode(3, qtc.TO_CONTENTS)
         lay.addWidget(self.tabel, 2)
+        bb = QtWidgets.QHBoxLayout()
+        self.b_hapus = QtWidgets.QPushButton("Remove selected")
+        self.b_hapus.setToolTip("Take the selected files out of the list (Delete key or right-click also works). "
+                                "Files are not deleted from your computer.")
+        self.b_hapus.clicked.connect(self._hapus_terpilih)
+        self.b_kosong = QtWidgets.QPushButton("Clear list")
+        self.b_kosong.setToolTip("Start again with an empty list: the data folder and the added files are cleared. "
+                                 "Files are not deleted from your computer.")
+        self.b_kosong.clicked.connect(self._kosongkan)
+        self.b_pulih = QtWidgets.QPushButton("Restore removed")
+        self.b_pulih.setToolTip("Put the files you removed from the data folder back in the list")
+        self.b_pulih.clicked.connect(self._pulihkan)
+        self.l_jumlah = QtWidgets.QLabel("")
+        self.l_jumlah.setStyleSheet("color:#5a6280")
+        for w_ in (self.b_hapus, self.b_kosong, self.b_pulih):
+            bb.addWidget(w_)
+        bb.addStretch(1)
+        bb.addWidget(self.l_jumlah)
+        lay.addLayout(bb)
         lay.addWidget(QtWidgets.QLabel("<b style='font-size:14px'>2. Input check</b> &nbsp; "
                                        "<span style='color:#0e7c7b'>auto-corrected</span> &middot; "
                                        "<span style='color:#b45309'>please check</span> &middot; "
@@ -221,15 +255,88 @@ class DialogTembuku(QtWidgets.QDialog):
             "Map data (*.kmz *.kml *.zip *.geojson *.json *.csv *.txt *.xlsx *.shp *.gpkg *.gml *.tab *.fgb *.gpx);;"
             "All files (*)")
         if fs:
+            fs = [os.path.normpath(f) for f in fs]
             self.tambahan = sorted(set(self.tambahan + fs))
+            self.kecuali = [p for p in self.kecuali if os.path.normpath(p) not in fs]   # ditambah lagi = dipakai lagi
+            self._simpan_daftar()
             self.periksa()
+
+    def _simpan_daftar(self):
+        """Daftar berkas langsung diingat, jadi tetap sama saat jendela dibuka lagi."""
+        self.st.setValue("tembuku/folder", self.w_folder.filePath())
+        self.st.setValue("tembuku/tambahan", json.dumps(self.tambahan))
+        self.st.setValue("tembuku/kecuali", json.dumps(self.kecuali))
+
+    def _path_baris(self, r):
+        it = self.tabel.item(r, 0)
+        return it.data(qtc.USER_ROLE) if it is not None else None
+
+    def _hapus_terpilih(self):
+        rows = sorted({i.row() for i in self.tabel.selectedIndexes()})
+        paths = [p for p in (self._path_baris(r) for r in rows) if p]
+        if not paths:
+            return
+        norm = {os.path.normpath(p) for p in paths}
+        self.tambahan = [p for p in self.tambahan if os.path.normpath(p) not in norm]
+        d = self.w_folder.filePath().strip()
+        dari_folder = set(os.path.normpath(p) for p in sumber.cari_berkas(d)) if d and os.path.isdir(d) else set()
+        self.kecuali = sorted(set(self.kecuali) | {p for p in paths if os.path.normpath(p) in dari_folder})
+        self._simpan_daftar()
+        self.periksa()
+
+    def _kosongkan(self):
+        if self.tabel.rowCount() and QtWidgets.QMessageBox.question(
+                self, "Tembuku", "Remove all %d files from the list? Files stay on your computer." %
+                self.tabel.rowCount()) != e_ya():
+            return
+        self.tambahan, self.kecuali = [], []
+        self.w_folder.blockSignals(True)
+        self.w_folder.setFilePath("")
+        self.w_folder.blockSignals(False)
+        self._simpan_daftar()
+        self.periksa()
+
+    def _pulihkan(self):
+        self.kecuali = []
+        self._simpan_daftar()
+        self.periksa()
+
+    def _menu_berkas(self, pos):
+        m = QtWidgets.QMenu(self)
+        r = self.tabel.rowAt(pos.y())
+        if r >= 0 and not self.tabel.item(r, 0).isSelected():
+            self.tabel.selectRow(r)
+        a1 = m.addAction("Remove from list")
+        a1.setEnabled(bool(self.tabel.selectedIndexes()))
+        a1.triggered.connect(self._hapus_terpilih)
+        a2 = m.addAction("Open containing folder")
+        p = self._path_baris(r) if r >= 0 else None
+        a2.setEnabled(bool(p))
+        a2.triggered.connect(lambda: QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(os.path.dirname(p))))
+        m.addSeparator()
+        m.addAction("Add files...").triggered.connect(self._tambah)
+        if self.kecuali:
+            m.addAction("Restore removed (%d)" % len(self.kecuali)).triggered.connect(self._pulihkan)
+        m.addAction("Clear list").triggered.connect(self._kosongkan)
+        qtc.jalankan_menu(m, self.tabel.viewport().mapToGlobal(pos))
+
+    def _status_tombol_berkas(self):
+        if not hasattr(self, "b_hapus"):
+            return
+        self.b_hapus.setEnabled(bool(self.tabel.selectedIndexes()))
+        self.b_kosong.setEnabled(self.tabel.rowCount() > 0 or bool(self.w_folder.filePath()))
+        self.b_pulih.setVisible(bool(self.kecuali))
+        self.b_pulih.setText("Restore removed (%d)" % len(self.kecuali))
+        self.l_jumlah.setText("%d files in the list%s" % (
+            self.tabel.rowCount(), (", %d removed" % len(self.kecuali)) if self.kecuali else ""))
 
     def berkas(self):
         out = []
         d = self.w_folder.filePath().strip()
         if d:
             if os.path.isdir(d):
-                out += sumber.cari_berkas(d)
+                kec = {os.path.normpath(p) for p in self.kecuali}
+                out += [p for p in sumber.cari_berkas(d) if os.path.normpath(p) not in kec]
             else:
                 out.append(d)           # jalur salah ketik -> dilaporkan FATAL oleh pra-cek
         return sorted(set(out + self.tambahan))
@@ -256,6 +363,7 @@ class DialogTembuku(QtWidgets.QDialog):
             alasan = (getattr(self.sesi, "bukti", None) or {}).get(p) or ""
             it = QtWidgets.QTableWidgetItem(os.path.basename(p))
             it.setToolTip(p)
+            it.setData(qtc.USER_ROLE, p)
             self.tabel.setItem(r, 0, it)
             it = QtWidgets.QTableWidgetItem(en(alasan) if alasan else "")
             it.setToolTip(en(alasan) if alasan else "")
@@ -267,6 +375,7 @@ class DialogTembuku(QtWidgets.QDialog):
             cb.currentIndexChanged.connect(lambda _i, p=p, cb=cb: self._ganti_peran(p, cb.currentData()))
             self.tabel.setCellWidget(r, 1, cb)
             self.tabel.setItem(r, 3, QtWidgets.QTableWidgetItem("%.1f MB" % (os.path.getsize(p) / 1048576.0)))
+        self._status_tombol_berkas()
         self._tulis_temuan()
 
     def _ganti_peran(self, path, baru):
