@@ -332,7 +332,7 @@ class TembukuPlugin:
     def tentang(self):
         from . import keaslian
         try:
-            status = keaslian.status(False)
+            status = keaslian.status(True)   # About dialog in English, like Seranta and Seuntai
         except Exception as e:      # status keaslian tidak boleh membuat dialog gagal
             status = "not verified (%s)" % e
         box = QtWidgets.QMessageBox(self.iface.mainWindow())
