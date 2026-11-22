@@ -211,9 +211,27 @@ class PanelTembuku(QtWidgets.QDockWidget):
         if h.get("batas"):
             teks.append("<p style='color:#7c3aed'><b>Please review:</b> using the existing feeder and building a new "
                         "one are almost equally good here. Check both before deciding.</p>")
-        teks.append("<p style='color:#5b6b78;margin:4px 0'>Why:</p>")
-        teks += ["<p style='background:#eef6f6;padding:4px'>%s</p>" % _esc(en(a)) for a in h["alasan"]]
-        teks += ["<p style='background:#fff4e0;padding:4px'>&#9888; %s</p>" % _esc(en(a)) for a in h["peringatan"]]
+        s = h.get("saran")
+        if s:
+            k = s["kandidat"]
+            no = next((j + 1 for j, x in enumerate(h["kandidat"]) if x is k), None)
+            teks.append("<p style='background:#ede9fe;border-left:4px solid #7c3aed;padding:4px'><b>%s</b> %s%s</p>" % (
+                "&#10003; Suggestion in use." if s.get("dipakai") else "&#128161; " + _esc(en(s["ringkas"])),
+                _esc(en(s["alasan"])),
+                (" To use it, double-click candidate #%d below." % no) if (no and not s.get("dipakai")) else ""))
+        pj = h.get("penjelasan")
+        if pj:
+            gaya = {0: "#eef6f6", 3: "#fff4e0", 4: "#f5f3ff"}
+            for j, (judul, isi) in enumerate(pj):
+                if j == 4:
+                    continue        # Saran sudah tampil di kotak ungu di atas
+                teks.append("<p style='color:#334155;margin:6px 0 2px'><b>%s</b></p>" % _esc(en(judul)))
+                teks += ["<p style='background:%s;padding:3px;margin:1px 0'>%s</p>" % (gaya.get(j, "#f8fafc"), _esc(en(a)))
+                         for a in isi]
+        else:
+            teks.append("<p style='color:#5b6b78;margin:4px 0'>Why:</p>")
+            teks += ["<p style='background:#eef6f6;padding:4px'>%s</p>" % _esc(en(a)) for a in h["alasan"]]
+            teks += ["<p style='background:#fff4e0;padding:4px'>&#9888; %s</p>" % _esc(en(a)) for a in h["peringatan"]]
         rute = sel["rute"] if sel else h.get("feeder_baru")
         if rute and rute.get("bantu_m", 0) > 1:
             teks.append("<p style='background:#fde8e8;padding:4px'><b>%d m is a straight helper line</b> (no road or "
@@ -223,7 +241,8 @@ class PanelTembuku(QtWidgets.QDockWidget):
         for k in h["kandidat"]:
             r = self.tabel.rowCount()
             self.tabel.insertRow(r)
-            vals = [str(r + 1), "%s %s" % (k["label_colo"], k["nama"] or k["id"]),
+            disarankan = bool(h.get("saran") and h["saran"]["kandidat"] is k)
+            vals = [str(r + 1) + (" *" if disarankan else ""), "%s %s" % (k["label_colo"], k["nama"] or k["id"]),
                     KAPASITAS.get(k["kapasitas"], k["kapasitas"]), "%d m" % k["kabel_baru_m"],
                     "-" if k.get("rasio_jalur") is None else "%.2fx" % k["rasio_jalur"],
                     en(mesin.vonis_kandidat(k))[:160]]
@@ -234,6 +253,9 @@ class PanelTembuku(QtWidgets.QDockWidget):
                     f = it.font()
                     f.setBold(True)
                     it.setFont(f)
+                if disarankan:
+                    it.setBackground(QtGui.QBrush(QtGui.QColor("#ede9fe")))
+                    it.setToolTip("Tembuku's suggestion. " + en(h["saran"]["ringkas"]))
                 self.tabel.setItem(r, c, it)
         self._zoom(h)
 
@@ -267,7 +289,7 @@ class PanelTembuku(QtWidgets.QDockWidget):
             return
         from .inti import mesin
         if self.plugin.sesi and self.plugin.sesi.data is not None:
-            mesin.pilih_manual(h, row, self.plugin.sesi.data)
+            mesin.pilih_manual(h, row, self.plugin.sesi.data, self.plugin.sesi.prm)
         else:
             QtWidgets.QMessageBox.warning(self, "Tembuku", "The data of this session is no longer loaded. Run the "
                                           "design again, then choose the candidate.")

@@ -316,10 +316,43 @@ class TembukuPlugin:
         panel.set_status("Done: %d FDTs (%s). Results are in %s" % (len(t.hasil), ring, os.path.dirname(t.keluaran["html"])))
         self.iface.messageBar().pushSuccess("Tembuku", "%d FDTs designed (%s). Report and KMZ files: %s" % (
             len(t.hasil), ring, os.path.dirname(t.keluaran["html"])))
+        if t.mode == "batch":
+            self._tawarkan_saran(t)
         try:
             QtGui.QDesktopServices.openUrl(qtc.QtCore.QUrl.fromLocalFile(t.keluaran["html"]))
         except Exception as e:
             _log.note(e)
+
+    def _tawarkan_saran(self, t):
+        """1.6.0: pop-up Saran Tembuku. Tanpa centang = desain sesuai aturan tetap (bawaan)."""
+        from . import saran_dialog
+        if not saran_dialog.daftar_saran(t.hasil):
+            return
+        dlg = saran_dialog.DialogSaran(t.hasil, self.iface.mainWindow())
+        if not qtc.jalankan(dlg):
+            return
+        pilih = dlg.dipilih()
+        if not pilih:
+            return
+        s = self.sesi
+        from .inti import mesin
+        QtWidgets.QApplication.setOverrideCursor(qtc.TUNGGU)
+        try:
+            for h in pilih:
+                k = h["saran"]["kandidat"]
+                i = next(j for j, x in enumerate(h["kandidat"]) if x is k)
+                mesin.pilih_manual(h, i, s.data, s.prm)
+            t.keluaran = s.simpan(self._keluar, hasil=t.hasil)
+        except Exception as e:  # simpan gagal: hasil di panel tetap, desainer diberi tahu
+            _log.note(e, "saran")
+            self.iface.messageBar().pushCritical("Tembuku", "Could not apply the suggestions: %s" % e)
+            return
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+        self.gambar(t.hasil)
+        self.panel.tampil(t.hasil, t.keluaran)
+        self.iface.messageBar().pushSuccess("Tembuku", "%d suggestion(s) applied; KMZ files and the report were saved "
+                                            "again in %s" % (len(pilih), os.path.dirname(t.keluaran["html"])))
 
     def gambar(self, hasil, pratinjau=False):
         from . import lapisan

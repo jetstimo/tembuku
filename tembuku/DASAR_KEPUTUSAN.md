@@ -5,6 +5,28 @@ Values are of three kinds: **standard** (from a current international standard o
 (measured on approved real designs) and **policy** (an engineering choice your team should confirm). Every value can be
 changed under *Advanced* in the Tembuku window.
 
+## 00. Version 1.6.0: Tembuku's suggestion and the drawing check
+**Decisions are the 1.5.x decisions.** The advisor and the drawing check run after the rule-based decision and never
+change it on their own (261 FDTs in 6 regions and 16 demo FDTs: same decision, F/T folder and cable size as 1.5.4).
+
+| Part | Rule | Basis |
+|---|---|---|
+| Suggestion threshold | at least 20% lower relative cost (reviewer cost model), or a safe signal (reserve intact, 1 dB to spare) where the rule-based design uses its reserve, for at most 10% more cost | calibrated: on 253 approved designs, 15 of 24 suggestions match the designer's feeder, the rule-based design 1 |
+| Rules a suggestion may relax | feeder direction, north/south of the POP, long detour | relaxing the own-corridor rule matched 0 of 2 designs, so it is never relaxed |
+| Never relaxed | free tube, optical budget, 4 km rule for 48 fibres, closure capacity, new-cable length and bends | technical limits |
+| Confidence "high" | at least 35% cheaper and no side effect (last free tube, detour) | 10 of 11 matched the designer |
+| Odd cable drawing | straight stretch >= 2 km; >= 300 m along no road (OpenStreetMap, 15 m); V-shaped turn back with arms >= 15 m; out-and-back >= 60 m | real pole spans are 40-50 m |
+| Policy for odd drawings | warn, never reject; redraw along the road when the road is at most 1.4x + 40 m; strong warning when the road length passes the 4 km rule or uses up the signal reserve | the cable and its tubes are real; rejecting it would mean a new feeder (x100 per metre) |
+
+## 0a. Version 1.5.0: reviewer rules of 18 Nov 2026
+| Reviewer rule | 1.5.0 setting | How it is applied |
+|---|---|---|
+| An existing feeder with a free tube takes the new FDT | `tolak_jalur_memutar` = No | The route ratio (`rasio_jalur_maks` 1.24) no longer rejects a candidate; it is written as a note. Candidates within the ratio still come first, so a nearby feeder is not replaced by a far one; a candidate beyond it is used only instead of a new feeder. Rejection remains for real limits: no free tube, feeder running away from the FDT, north/south rule, optical budget, full closure, 48F path beyond the distance limit. |
+| Rajawali case: no colo into a feeder that becomes full | `proyek_satu_feeder` = Yes, `proyek_jarak_maks_m` 2000 | FDTs of one project file (within 2 km of each other) are designed in file order. The first FDT needs free tubes for the whole project; the next FDTs follow its feeder. |
+| 96-fibre cable beyond 4 km, 48-fibre up to 4 km | `batas_48f_km` = 4 (was 6), `kabel_dari_sisa_tube` = No, `feeder_baru_ikut_jarak` = Yes | One distance rule for the tube group (48F T9-T12 / 96F T1-T8), the new cable to the FDT and the cable of a new feeder after the closure 144. |
+| COLO CABLE description follows the feeder route it rides; several clusters -> description per cluster | `colo_route` | The drawn COLO CABLE is followed every 10 m and matched to the compilation cables of the feeder used (within 30 m; designers' lines are not always on the pole line). Only clusters of that feeder are named, because the fibre physically stays in that feeder; where cluster cables share a pole line the one that follows the route longest is named; pieces under 60 m join the previous piece. Text: `Colo Cable F<n> Feeder <cluster area>`. |
+| Existing route information with NAME and DESCR2 | KMZ folder *Informasi Route Existing* | The drawn route (COLO CABLE from the POP, then the new cable) is followed every 10 m; a point rides on an inventory cable within 12 m (one pole line). Where several cables share the pole line the one that follows the route longest is listed; pieces under 30 m are left out. Not read back from a compilation. |
+
 ## 0b. Version 1.4.4: every engineering rule (PDF 11 Nov 2026) checked against sources and data
 A rule is followed as written unless a credible source **and** the 213-design test show a better choice. Rules not
 followed literally stay available under *Advanced* (set them to the PDF value to apply them as written).
@@ -12,7 +34,7 @@ followed literally stay available under *Advanced* (set them to the PDF value to
 | PDF rule | 1.4.4 default | Basis |
 |---|---|---|
 | 3.1/3.2 FDT up to 6 km on the 48F group (T9-T12), beyond on 96F (T1-T8), as a **preference** | Off (`utamakan_aturan_6km` = No) | Loss grows with length (fibre attenuation ITU-T G.652; class B+ budget 28 dB, G.984.2; FOA: GPON 32-split 13-28 dB), not with fibre count, so the group gives no optical gain. Test: F/T match 36 % on vs 54 % off; new cable 563 vs 425 km |
-| 48F branch at most 6 km; longer fibre path on 96F | Followed (`batas_48f_km` 6) | Capacity reserve on long routes: fibre is cheap compared with installation (FOA FTTH design) |
+| 48F branch at most 6 km; longer fibre path on 96F | Followed (`batas_48f_km` 6; 4 km since 1.5.0) | Capacity reserve on long routes: fibre is cheap compared with installation (FOA FTTH design) |
 | 3.3 Tap at existing slack, no new slack | Followed with a limit: slack first when at most 600 m / 15 % more cable (`toleransi_slack_antar_m`) | Mid-span access is a normal practice with loose-tube cable (FOA mid-span access; STL, Superior Essex TG082 and OFS guides give 1.8-2.4 m sheath openings). Extra cable to reach a slack costs more than a closure beyond a few hundred metres. Test: 300 m 421 km / 99 checks, **600 m 425 km / 92 checks / best F/T**, 1000 m 434 km / 81, always 481 km / 60 |
 | Closure 0-5 m strong, 5-10 m check | Followed (`tap_slack_m` 10) | - |
 | Closure 6 holes (1 in + 5 out) | Followed | Manufacturer port count; policy |
@@ -164,7 +186,7 @@ The 17 decisions are identical before and after the change.
 | `jarak_dekat_m` | 'Very close' distance (m) | 300 | calibrated | If the FDT is this close to a cable, direction does not matter. |
 | `detour_maks` | Maximum detour | 1.5 | calibrated | New cable length divided by the straight distance from tap to FDT. |
 | `cabang_maks_m` | Longest new branch (m) | 2500 | policy | Longest new cable from the tap to the FDT that still makes sense. |
-| `rasio_jalur_maks` | Route ratio limit | 1.24 | calibrated | Reuse a feeder only if (POP-to-tap + new cable) is at most this many times a new feeder straight from the POP. Calibrated on 17 real designs. |
+| `rasio_jalur_maks` | Route ratio limit | 1.24 | calibrated | Reuse a feeder only if (POP-to-tap + new cable) is at most this many times a new feeder straight from the POP. Calibrated on 17 real designs. Since 1.5.0 it rejects only when `tolak_jalur_memutar` is Yes. |
 | `zona_batas` | Borderline band | 0.05 | policy | Results within this distance of the route ratio limit are marked 'borderline' for a designer to review. |
 | `faktor_tiang_eksisting` | Cost factor: existing poles | 0.8 | policy | Relative cost per metre of running along existing poles (lower = preferred). |
 | `faktor_akses` | Cost factor: access link | 1.2 | policy | Relative cost of the short straight link from an FDT or POP to the nearest road or cable. |

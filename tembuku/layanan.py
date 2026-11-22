@@ -11,7 +11,8 @@ import os
 import re
 import time
 
-from .inti import indeks, laporan, mesin, osm, profil, sumber, tulis_kmz
+from . import _log
+from .inti import geo, indeks, laporan, mesin, osm, profil, sumber, tulis_kmz
 from .inti import validasi as V
 from .inti.teks import T
 
@@ -386,8 +387,13 @@ class Sesi(object):
         if not self.uji:
             self._pakai_hasil_lama(targets)
         self.siapkan_jalan(targets)
+        try:
+            self.periksa_gambar(targets)
+        except Exception as e:      # pemeriksaan gambar pelengkap: desain tetap jalan
+            _log.note(e, "periksa gambar")
         n = len(targets)
         self._kec_batch = set()     # desain lama FDT yang dirancang ulang di proses ini (tetap tersembunyi sampai selesai)
+        grup = self._siapkan_proyek(targets)
         for i, f in enumerate(targets):
             self.progres("Designing FDT %s (%d/%d)" % (f["kode"], i + 1, n), 70 + 25.0 * i / max(n, 1))
             try:
@@ -403,6 +409,7 @@ class Sesi(object):
                         self.temuan.tambah(V.INFO, "Proses", T("usulan FDT %s tidak bisa dicatat ke buku tube (%s)",
                                                                "the proposal for FDT %s could not be added to the tube "
                                                                "book (%s)") % (f["kode"], str(e)[:100]))
+                    self._catat_feeder_proyek(f, self.hasil[-1], grup)
                 if f.get("_uji"):
                     from . import uji_akurasi
                     self.nilai_uji.append(uji_akurasi.nilai(self.hasil[-1]))
@@ -417,6 +424,126 @@ class Sesi(object):
                 self.hasil.append(mesin.hasil_gagal(f, self.data, self.prm, str(e)[:150]))
         self.data.kecuali = set()
         return self.hasil
+
+    def periksa_gambar(self, targets, maks_pesan=25):
+        """1.6.0: periksa bentuk gambar setiap kabel compile dan inventaris di area kerja (POP sampai FDT). Kabel yang
+        janggal TIDAK ditolak (tube-nya tetap nyata); dilaporkan di pemeriksaan input dan dicatat di data.gambar_rusak
+        agar hasil FDT yang memakainya diberi peringatan. Lihat inti/cek_gambar.py untuk kebijakan dan ambangnya."""
+        from .inti import cek_gambar as CG
+        self.data.gambar_rusak = {}
+        kec, self.data.kecuali = self.data.kecuali, set()
+        kabel, jalan, bbs = {}, {}, []
+        try:
+            for f in targets:
+                pop = mesin.pilih_pop(f["ll"], self.data, maks_m=self.prm["pop_maks_m"])
+                bb = mesin.bbox_jalan(f["ll"], pop, self.prm)
+                if any(b[0] <= bb[0] and b[1] <= bb[1] and b[2] >= bb[2] and b[3] >= bb[3] for b in bbs):
+                    continue
+                bbs.append(bb)
+                for k in self.data.kabel_compile(bb) + self.data.koridor_compile(bb) + self.data.kabel_nasional(bb):
+                    kabel.setdefault(k["id"], k)
+                if self.data.jalan is not None:
+                    try:
+                        for j in self.data.jalan(bb) or []:
+                            jalan[id(j)] = j
+                    except Exception as e:      # tanpa jalan: garis lurus tetap diperiksa tanpa pengecualian jalan
+                        _log.note(e, "periksa gambar jalan")
+        finally:
+            self.data.kecuali = kec
+        dj = CG.JalanDekat(list(jalan.values()))
+        dj = dj if dj else None
+        temu, sudah = [], set()
+        for k in kabel.values():
+            masalah = CG.periksa(k.get("ll") or [], dj)
+            if masalah:
+                self.data.gambar_rusak[k["id"]] = masalah
+                # satu tempat cukup dilaporkan sekali: garis yang sama sering tersimpan beberapa kali (New Cable, Colo
+                # Cable, Infra satu traksi) atau dipakai bersama beberapa traksi di satu jalur tiang
+                kunci = tuple((x["jenis"], round(x["ll"][0], 4), round(x["ll"][1], 4)) for x in masalah)
+                if kunci in sudah:
+                    continue
+                sudah.add(kunci)
+                temu.append((k, masalah))
+        if not temu:
+            return
+        n_c = sum(1 for k, _m in temu if k.get("sumber") == "COMPILE")
+        def berat(m):
+            return max((x["m"] * (10 if x["jenis"] == "LOMPAT" else 3 if x["jenis"] == "LURUS" else 1)) for x in m)
+        temu.sort(key=lambda km: (km[0].get("sumber") != "COMPILE", -berat(km[1])))
+        for k, masalah in temu[:maks_pesan]:
+            compile_ = k.get("sumber") == "COMPILE"
+            nama = (k.get("traksi") or k.get("feeder") or k["id"]) if compile_ else (k.get("nama") or k["id"])
+            berkas = os.path.basename(str((k.get("grup") or [""])[0])) if compile_ else T("inventaris kabel", "cable inventory")
+            serius = any(x["jenis"] == "LOMPAT" or (x["jenis"] == "LURUS" and compile_) for x in masalah)
+            rinci = "; ".join("%s, %s m, di %.6f, %.6f" % (CG.NAMA[x["jenis"]], "{:,}".format(x["m"]).replace(",", "."),
+                                                           x["ll"][1], x["ll"][0]) for x in masalah)
+            rinci_en = "; ".join("%s, %s m, at %.6f, %.6f" % (CG.NAMA_EN[x["jenis"]], "{:,}".format(x["m"]), x["ll"][1],
+                                                             x["ll"][0]) for x in masalah)
+            self.temuan.tambah(V.PERINGATAN if serius else V.INFO, "Gambar kabel",
+                               T("Kabel %s %s: %s.", "%s cable %s: %s.") % (
+                                   T("compile", "compilation") if compile_ else T("inventaris", "inventory"), nama,
+                                   T(rinci, rinci_en)), berkas,
+                               T("kabelnya tetap dipakai; kalau sempat, rapikan gambar aslinya (koordinat bisa ditempel "
+                                 "di pencarian Google Earth)", "the cable is still used; when you can, tidy the original "
+                                 "drawing (paste the coordinates into Google Earth search)"))
+        self.temuan.tambah(V.PERINGATAN if n_c else V.INFO, "Gambar kabel", T(
+            "Ada %d kabel di sekitar FDT yang gambarnya kurang rapi (%d di compile, %d di inventaris)%s. Semuanya tetap "
+            "dipakai. Kalau dipakai FDT, Tembuku menggambarnya ulang mengikuti jalan dan memberi tahu bila panjang "
+            "sebenarnya mengubah ukuran kabel atau redaman.", "%d cables around the FDTs are drawn poorly (%d in the "
+            "compilation, %d in the inventory)%s. All are still used. When an FDT uses one, Tembuku redraws it along the "
+            "road and tells you if the real length changes the cable size or the signal budget.") % (
+            len(temu), n_c, len(temu) - n_c, (T("; %d yang paling perlu dicek ditampilkan",
+                                                "; the %d that most need a look are shown") % maks_pesan)
+            if len(temu) > maks_pesan else ""))
+
+    def _siapkan_proyek(self, targets):
+        """Arahan atasan 18-11-2026 (kasus Rajawali): FDT dalam satu berkas target yang berdekatan = satu proyek. Tiap FDT
+        diberi _proyek_sisa = jumlah FDT proyek yang belum dirancang (termasuk dirinya), sehingga feeder existing hanya
+        dipakai bila tube kosongnya cukup untuk seluruh proyek. Urutan FDT tidak diubah. -> {id(f): daftar FDT proyek}."""
+        for f in targets:
+            f.pop("_proyek_sisa", None)
+            f.pop("_proyek_feeder", None)
+        grup = {}
+        if self.uji or not self.prm.get("proyek_satu_feeder", True):
+            return grup
+        maks = float(self.prm.get("proyek_jarak_maks_m", 2000))
+        per_berkas = {}
+        for f in targets:
+            if f.get("_uji") or not f.get("ll"):
+                continue
+            per_berkas.setdefault(os.path.normcase(str(f.get("berkas") or "")), []).append(f)
+        for daftar in per_berkas.values():
+            # rantai jarak (single linkage): FDT yang saling berdekatan <= maks menjadi satu proyek
+            sisa = list(daftar)
+            while sisa:
+                kel = [sisa.pop(0)]
+                tambah = True
+                while tambah:
+                    tambah = False
+                    for g in list(sisa):
+                        if any(geo.haversine(g["ll"], x["ll"]) <= maks for x in kel):
+                            kel.append(g)
+                            sisa.remove(g)
+                            tambah = True
+                kel.sort(key=daftar.index)
+                for j, f in enumerate(kel):
+                    if len(kel) > 1:
+                        f["_proyek_sisa"] = len(kel) - j
+                    grup[id(f)] = kel
+        return grup
+
+    @staticmethod
+    def _catat_feeder_proyek(f, h, grup):
+        """Feeder yang dipakai FDT pertama sebuah proyek menjadi pilihan utama FDT proyek berikutnya."""
+        kel = grup.get(id(f)) or []
+        if len(kel) < 2 or h.get("keputusan") not in ("COLO", "COLO_CEK", "FEEDER_BARU"):
+            return
+        n = h.get("penomoran") or {}
+        if not n.get("feeder"):
+            return
+        pin = {"feeder": int(n["feeder"]), "pop_folder": n.get("pop_folder") or "", "kode": f.get("kode")}
+        for g in kel[kel.index(f) + 1:]:
+            g.setdefault("_proyek_feeder", pin)
 
     def _pakai_hasil_lama(self, targets):
         """KMZ desain Tembuku dari proses sebelumnya di folder hasil = tube dan kabel yang sudah diusulkan. Dibaca seperti
@@ -496,6 +623,28 @@ class Sesi(object):
             if n > maks_titik:
                 break
             out.append(garis)
+        return out
+
+    def _peta_tube(self, hasil):
+        """Dasbor laporan: isi tube T1-T12 setiap feeder di POP yang dipakai proses ini.
+        -> [{pop, feeder, tube: {T: 'lama' | kode FDT proses ini}}]. Tube yang tidak disebut = kosong."""
+        if self.data is None:
+            return []
+        baru = {}
+        for h in hasil:
+            n = h.get("penomoran") or {}
+            if h.get("keputusan") in ("COLO", "COLO_CEK", "COLO_MANUAL", "FEEDER_BARU") and h.get("pop") and n.get("feeder"):
+                baru[(h["pop"]["nama"], int(n["feeder"]), int(n["t"]))] = h["fdt"]["kode"]
+        out = []
+        for pop in sorted({p for p, _f, _t in baru}):
+            led = self.data.ledger(pop) or {}
+            fes = sorted({f for f in led if isinstance(f, int)} | {f for p, f, _t in baru if p == pop})
+            for fe in fes:
+                isi = {int(t): "lama" for t in (led.get(fe) or {}).get("tube", ()) if str(t).isdigit()}
+                for (p, f, t), kode in baru.items():
+                    if p == pop and f == fe:
+                        isi[t] = kode
+                out.append({"pop": pop, "feeder": fe, "tube": {str(t): v for t, v in sorted(isi.items())}})
         return out
 
     def simpan(self, folder_keluar, hasil=None, alat="Tembuku"):
@@ -624,6 +773,10 @@ class Sesi(object):
                 "bukti": {os.path.basename(p): str(a) for p, a in (getattr(self, "bukti", None) or {}).items() if a},
                 "parameter": {profil.LABEL_ID.get(k, k): [self.prm[k], profil.JENIS_ID.get(v[1], v[1]), v[2]]
                               for k, v in profil.BAWAAN.items()}}
+        try:
+            meta["tube"] = self._peta_tube(hasil)
+        except Exception as e:     # dasbor tube hanya pelengkap: laporan tetap ditulis
+            _log.note(e, "peta tube")
         out["html"] = laporan.tulis(hasil, os.path.join(folder_keluar, "TEMBUKU_LAPORAN_%s.html" % tgl), meta)
         out["csv"] = os.path.join(folder_keluar, "TEMBUKU_RINGKASAN_%s.csv" % tgl)
         with open(out["csv"], "w", encoding="utf-8-sig", newline="") as fh:

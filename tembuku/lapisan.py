@@ -23,7 +23,7 @@ from .plugin import KEPUTUSAN_EN
 
 WARNA = {"TIANG_COMPILE": "#0e7c7b", "TIANG_NASIONAL": "#00b4d8", "NEW_INFRA": "#22c55e", "GARIS_BANTU": "#ef4444",
          "Colo Cable": "#a855f7", "Kandidat lolos": "#f59e0b", "Kandidat ditolak": "#9ca3af", "FDT": "#c2410c",
-         "POP": "#1d4ed8", "TAP": "#111827"}
+         "POP": "#1d4ed8", "TAP": "#111827", "Route existing": "#7c2d12"}
 
 
 def _layer(geom, nama, fields):
@@ -92,6 +92,9 @@ def tampilkan(hasil, judul="Tembuku", ganti=None):
     titik = _layer("Point", "FDT, POP and tap points", [("kind", _T.String), ("label", _T.String),
                                                ("fdt", _T.String), ("decision", _T.String)])
     desain = _layer("LineString", "Designer's own design (for comparison)", [("fdt", _T.String), ("kind", _T.String)])
+    eks = _layer("LineString", "Existing routes used (NAME, DESCR2)", [("fdt", _T.String), ("NAME", _T.String),
+                                                                       ("DESCR2", _T.String), ("length_m", _T.Int)])
+    re_ = []
     rd = []
     rj, rc, rk, rt = [], [], [], []
     for h in hasil:
@@ -105,8 +108,13 @@ def tampilkan(hasil, judul="Tembuku", ganti=None):
                 rj.append((_garis(ll), [kode, KEPUTUSAN_EN.get(h["keputusan"], h["keputusan"]), mesin.label_kelas_en(kelas),
                                         int(geo.panjang_deg(ll))]))
         if sel and sel.get("colo_xy"):
-            ll = [L.balik(p) for p in sel["colo_xy"]]
+            ll = [L.balik(p) for p in (sel.get("colo_gambar_xy") or sel["colo_xy"])]   # gambar yang sama dengan KMZ
             rc.append((_garis(ll), [kode, sel["nama"] or sel["id"], int(geo.panjang_deg(ll))]))
+        info = (sel or {}).get("route_existing") if sel else (
+            (h.get("feeder_baru") or {}).get("route_existing") if h["keputusan"] == "FEEDER_BARU" else None)
+        for d in info or []:
+            if len(d.get("ll") or []) >= 2:
+                re_.append((_garis(d["ll"]), [kode, d["nama"], d["descr2"], int(d.get("panjang_m") or 0)]))
         for i, k in enumerate(h["kandidat"][:6]):
             st = "Candidate passes" if k["lolos"] else "Candidate rejected"
             rk.append((_garis(k["ll_kabel"]), [kode, i + 1, k["nama"] or k["id"], st, en(k["ket_kapasitas"]),
@@ -131,6 +139,10 @@ def tampilkan(hasil, judul="Tembuku", ganti=None):
     _isi(kand, rk)
     _isi(titik, rt)
     _isi(desain, rd)
+    _isi(eks, re_)
+    # cokelat tua putus-putus: beda jelas dari kandidat (oranye), colo (ungu), tiang (teal/biru) dan New Infra (hijau)
+    eks.setRenderer(QgsSingleSymbolRenderer(QgsLineSymbol.createSimple({
+        "color": WARNA["Route existing"], "width": "0.9", "line_style": "dash", "capstyle": "round"})))
     _gaya_kategori(desain, "kind", {"new cable": ("#111111", 0.8, "dash"), "existing feeder used": ("#555555", 0.5, "dot")})
     _gaya_kategori(jalur, "route_type", {mesin.label_kelas_en(k): (WARNA[k], 1.6 if k != "GARIS_BANTU" else 0.9,
                                                            "dash" if k == "GARIS_BANTU" else "solid")
@@ -141,7 +153,9 @@ def tampilkan(hasil, judul="Tembuku", ganti=None):
     _gaya_kategori(titik, "kind", {"FDT": (WARNA["FDT"], 4.5, "square"), "POP": (WARNA["POP"], 5.0, "star"),
                                     "TAP": (WARNA["TAP"], 2.6, "circle")}, garis=False)
     _label(titik, "label")
-    for lyr in (titik, jalur, colo, kand) + ((desain,) if rd else ()):
+    # rute existing berimpit dengan rute kabel: digambar DI ATAS rute (garis tipis putus-putus di atas garis tebal),
+    # bila di bawah tertutup seluruhnya (uji di jendela QGIS 18-11-2026)
+    for lyr in (titik,) + ((eks,) if re_ else ()) + (jalur, colo, kand) + ((desain,) if rd else ()):
         proj.addMapLayer(lyr, False)
         grp.addLayer(lyr)
     return grp, [titik, jalur, colo, kand]

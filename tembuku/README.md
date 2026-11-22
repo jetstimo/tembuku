@@ -41,6 +41,51 @@ Esri World Imagery (0.3-0.5 m, your own API key) with the capture date at the ma
 than 12 months. The HTML report always shows OpenStreetMap road lines (offline) and, if you allow it, the same satellite layers.
 **Help:** *Vector → Tembuku → Help and Quick Guide* opens an offline guide with a glossary.
 
+## New in 1.6.0 (results designers can rely on and understand)
+- **Every result explains itself** in five fixed parts: decision, main reasons (with the numbers), alternatives and why
+  each was not chosen, what to check, and Tembuku's suggestion. Shown in the panel (English) and the report (Indonesian).
+- **Tembuku's suggestion.** After the rule-based design, every alternative is assessed again with the soft rules relaxed
+  (own corridor, north/south, direction, long way round). A clearly better one (at least 20% lower relative cost, or a safe
+  signal where the rule-based design has no full reserve) is offered in a window after the run. Hard limits are never
+  relaxed. The rule-based design stays unless the designer ticks the suggestion. Deterministic: no internet, no language
+  model; the same data always gives the same suggestion.
+- **Decision dashboard** in the HTML report: totals, *what to check first* sorted by risk, suggestions, a sortable
+  comparison of all FDTs, a tube map per feeder and a cost comparison per FDT. Still one offline file.
+- **Badly drawn existing cables are redrawn along the road.** A straight stretch of 300 m or more in the input (real pole
+  spans are 40-50 m) that runs along no road is drawn along the road between the same ends, when that road is not much
+  longer. The same road test is used by the input check, so only the cables it lists are redrawn. Drawing only; decisions are unchanged and the result names the metres redrawn.
+- **Input check of cable drawings.** Every compilation and inventory cable in the work area is checked for broken shapes
+  (straight stretch of 2 km or more, 300 m or more off any road, spikes, out-and-back lines) and listed with coordinates.
+  Warned, not rejected: the cable and its tubes are real, and rejecting it would mean a needless new feeder. When an FDT
+  uses such a cable and the route measured along the road passes the 4 km limit for 48 fibres or the signal reserve, the
+  result carries an IMPORTANT warning.
+
+## New in 1.5.0 (reviewer rules of 18 Nov 2026)
+- **A feeder with a free tube is used.** If an existing feeder still has a free tube, runs toward the FDT and keeps the
+  signal within the limit, the new FDT goes into that feeder. A long route is noted, no longer a reason to reject (the
+  1.24 route limit of 1.4.x can be switched back on under *Advanced*). Feeders with a reasonable route still come
+  first; a feeder with a long way round is used only when the other choice would be a new feeder.
+- **One project, one feeder.** The FDTs of one project file are designed together: an existing feeder is used only if it
+  has enough free tubes for all of them, and the next FDTs follow the feeder of the first. A cluster is no longer split
+  between a feeder that it fills up and a new feeder (Jambi RT 023 Rajawali: both FDTs now on one feeder, T1 and T2).
+- **48 or 96 fibres by distance, automatically.** Up to 4 km POP-to-FDT along the real route the cable is 48 fibres
+  (48F branch, T9-T12); beyond 4 km it is 96 fibres (96F, T1-T8). This sets the new cable to the FDT and, for a new
+  feeder, the cable after the closure 144 (was 6 km, and new feeders were always 96).
+- **New KMZ folder "Informasi Route Existing"**: the existing cables of the cable inventory that the drawn route rides on,
+  from the POP to the FDT, one line per cable with its NAME and DESCR2 in the balloon table. Information only: it is not
+  read back as a cable or pole route when the KMZ is pasted into the compilation.
+- **COLO CABLE described by the feeder route it rides.** Each COLO CABLE line says which cluster cable of the feeder
+  used it follows, e.g. *Colo Cable F6 Feeder Perumahan karlia asri*; when the route passes several clusters of that
+  feeder, the line is split in route order with one description per cluster (Palembang PLG1-TBE01-H01: Komplek
+  Sukarami Indah, then RW 14 Kebun Bunga, then RW 13 Kebun Bunga). Feeders proposed earlier in the same run are named
+  by their cluster, not by an internal Tembuku name.
+- **FDT file names with a space are read**: `21100232553 RT 023 RAJAWALI.kmz` gives cluster 21100232553 and area
+  RT 023 RAJAWALI, so the design folder is `F7_T1_21100232553_APD Feeder KMZ_RT 023 RAJAWALI_<date>`.
+- **Team icons, the same in every region.** Icons are taken first from the Tembuku icon folder (`<QGIS profile>/tembuku/ikon`
+  or `Documents/Tembuku/ikon`), then from an icon folder next to the data, always in that order, and the exact template
+  names win. Used as in the designers' compilations: FDT ioh, OLT, Closure 48 / 96, CL_144, CL_288, OTB_144, 6m,
+  ICONFTTH-7M, ICONFTTH-9m, and Spare Cable for slack and hanger points; Google template icons only when the team set is missing.
+
 ## New in 1.4.4 (engineering rules checked against sources and data)
 Every rule of the 11 Nov 2026 engineering document was checked against credible technical sources (ITU-T, the Fiber
 Optic Association, cable and closure manufacturers' installation guides, Indonesian road-space regulation) and against
@@ -92,8 +137,8 @@ Found by running four city compilations (213 designs). The design rules and the 
 1. Only fibre-to-the-home feeders of at least 48 fibres may give fibres; other cables are existing pole routes only.
 2. Free tubes: inventory spare fibres ÷ 12; for on-going feeders, tubes minus the FDTs they already serve (1 FDT = 1 tube).
    A missing spare count is shown as *not verified* and is never accepted automatically.
-3. Toward the FDT: the fibre path through the tap is at most 1.24 × a new feeder from the POP, and the cable at the tap
-   points toward the FDT (cos ≥ 0.5).
+3. Toward the FDT: the cable at the tap points toward the FDT (cos ≥ 0.5). Since 1.5.0 a feeder with a free tube is
+   used even when its route is longer than a new feeder (the 1.24 × limit only rejects when switched on).
 4. Route: shortest path over existing poles, OpenStreetMap roads and short access links, existing poles preferred.
 5. Optical budget with the maximum values of current ITU-T standards (G.652, G.671, G.9940) against GPON class B+ 28 dB
    (G.984.2); POP within 20 km (G.984.1).
