@@ -138,6 +138,8 @@ class Data(object):
                 fdt |= set(t.get("_tambahan") or ())
                 d["fdt_di_feeder"] = sorted(fdt)
                 d["tube_traksi"] = set(inf.get("tube") or ())
+                d["area"] = str(inf.get("area") or "").strip()      # nama cluster traksi (keterangan COLO CABLE)
+                # mis. "Feeder 6" dipakai juga untuk keterangan saran dan penjelasan
                 d["pop_nama"] = self.nama_pop(k["pop_folder"], c)
                 out.append(d)
         return out
@@ -282,8 +284,10 @@ def kapasitas(k, prm, butuh_core, data=None):
     """-> (status, tube_bebas, teks, info). status: LOLOS / PENUH / BELUM_TERVERIFIKASI / BUKAN_FEEDER.
     info: kelompok, bebas (daftar nomor tube kosong), tube (usulan), terpakai, feeder, sisa_kabel, bebas_lain."""
     cpt = prm["core_per_tube"]
+    # tube yang dibutuhkan: 1 FDT = tube_per_fdt; FDT pertama dari proyek berisi n FDT butuh tempat untuk n FDT
+    butuh = max(int(prm["tube_per_fdt"]), int(prm.get("_butuh_tube") or 0))
     info = {"kelompok": None, "bebas": [], "tube": None, "terpakai": [], "feeder": _angka_feeder(k.get("feeder")),
-            "sisa_kabel": None, "bebas_lain": [], "kelompok_lain": None}
+            "sisa_kabel": None, "bebas_lain": [], "kelompok_lain": None, "butuh": butuh}
     if k["sumber"] == "NASIONAL":
         boleh = [x.strip().upper() for x in str(prm["produk_feeder"]).split(",") if x.strip()]
         if not boleh or (k.get("product") or "").upper() not in boleh:
@@ -306,7 +310,7 @@ def kapasitas(k, prm, butuh_core, data=None):
                                                                        "%d spare fibres (%d needed)") % (
                 k["spare"], butuh_core), info
         bebas = int(k["spare"] // c) - prm["cadangan_tube"]
-        return ("LOLOS" if bebas >= prm["tube_per_fdt"] else "PENUH"), bebas, T(
+        return ("LOLOS" if bebas >= butuh else "PENUH"), bebas, T(
             "cadangan %d core = %d tube kosong", "%d spare fibres = %d free tubes") % (k["spare"], max(bebas, 0)), info
     core = k.get("core")
     if not core:
@@ -324,7 +328,7 @@ def kapasitas(k, prm, butuh_core, data=None):
         # compile tanpa nomor tube (susunan lain): hitung seperti dulu, nomor T diberi berurutan
         bebas = tube - terpakai * prm["tube_per_fdt"] - prm["cadangan_tube"]
         info["sisa_kabel"] = bebas
-        return ("LOLOS" if bebas >= prm["tube_per_fdt"] else "PENUH"), bebas, T(
+        return ("LOLOS" if bebas >= butuh else "PENUH"), bebas, T(
             "%d core = %d tube, sudah melayani %d FDT", "%d fibres = %d tubes, already used by %d FDT(s)") % (
             core, tube, terpakai), info
     kel, grup = _kelompok_kabel(k, prm)
@@ -337,14 +341,18 @@ def kapasitas(k, prm, butuh_core, data=None):
         sisa_kabel = tube - terpakai * prm["tube_per_fdt"]
     info.update({"kelompok": kel, "bebas": bebas, "tube": bebas[0] if bebas else None, "terpakai": sorted(pakai),
                  "sisa_kabel": sisa_kabel, "bebas_lain": lain, "kelompok_lain": "96F" if kel == "48F" else "48F"})
-    ok = bool(bebas) and len(bebas) > prm["cadangan_tube"] and sisa_kabel >= prm["tube_per_fdt"]
-    nama_grup = T("tube %s (jalur kabel %s)", "tubes %s (the %s path)") % (_teks_tube(grup), kel)
+    ok = bool(bebas) and len(bebas) >= prm["cadangan_tube"] + butuh and sisa_kabel >= butuh
+    nama_grup = T("tube %s di jalur %s", "tubes %s on the %s path") % (_teks_tube(grup), kel)
     if ok:
         teks = T("Feeder %d sudah memakai %s; yang masih kosong di %s: %s. Diusulkan %s",
                  "Feeder %d already uses %s; still free in %s: %s. Proposed: %s") % (
             fe, _teks_tube(pakai), nama_grup, _teks_tube(bebas), "T%d" % bebas[0])
     elif not bebas:
         teks = T("Feeder %d sudah memakai semua %s", "Feeder %d already uses all %s") % (fe, nama_grup)
+    elif butuh > 1 and len(bebas) < prm["cadangan_tube"] + butuh:
+        teks = T("Feeder %d hanya punya %d tube kosong di %s (%s), padahal proyek ini butuh %d tube untuk %d FDT",
+                 "Feeder %d has only %d free tube(s) in %s (%s), while this project needs %d tubes for %d FDTs") % (
+            fe, len(bebas), nama_grup, _teks_tube(bebas), butuh, butuh)
     else:
         teks = T("kabel %d core ini sudah penuh: sudah melayani %d FDT dari kapasitas %d",
                  "this %d-fibre cable is full: it already serves %d FDT(s) of %d") % (core, terpakai, tube)
@@ -433,8 +441,21 @@ JARAK_POP_M = 150.0         # titik sambung sejauh ini dari POP = di closure 144
 TOLERANSI_SETARA = 0.05     # kandidat yang kabel barunya beda < 5 % (dan < 100 m) dianggap setara
 
 
+def core_feeder_baru(h, prm):
+    """Ukuran kabel distribusi feeder baru (setelah closure 144). Arahan atasan 18-11-2026: 48 core bila jalur POP->FDT
+    sampai batas_48f_km, 96 core bila lebih; 'Tidak' pada feeder_baru_ikut_jarak = selalu core_feeder_baru."""
+    fb = h.get("feeder_baru") or {}
+    if not prm.get("feeder_baru_ikut_jarak", True) or not fb:
+        return int(prm["core_feeder_baru"])
+    pjg = float(fb.get("panjang_est_m") or fb.get("panjang_m") or 0.0)
+    return 96 if pjg > float(prm["batas_48f_km"]) * 1000.0 else 48
+
+
 def analisis(fdt, data, prm=None, log=None):
     prm = prm or profil.baru()
+    sisa_proyek = int(fdt.get("_proyek_sisa") or 0)
+    if sisa_proyek > 1:     # FDT ini dan FDT proyek berikutnya harus muat di feeder yang sama
+        prm = dict(prm, _butuh_tube=sisa_proyek)
     F = fdt["ll"]
     L = geo.Lokal(F[0], F[1])
     fx = (0.0, 0.0)
@@ -642,7 +663,19 @@ def analisis(fdt, data, prm=None, log=None):
     if np_ is not None and distA[np_] < INF:
         hasil["feeder_baru"] = _rakit_rute(G, prevA, np_, byid, prm["faktor_garis_bantu"])
         hasil["feeder_baru"]["biaya"] = distA[np_]
+        hasil["feeder_baru"]["core"] = core_feeder_baru(hasil, prm)
     _putuskan(hasil, prm)
+    # Saran Tembuku: semua kandidat (bukan hanya 12 teratas) dinilai ulang; yang disarankan masuk daftar kandidat
+    # agar bisa dipilih di panel/pop-up dengan mekanisme yang sama (pilih_manual)
+    from . import saran as _saran
+    alt = _saran.nilai(hasil, daftar, prm)
+    if alt is not None and not any(k is alt for k in hasil["kandidat"]):
+        hasil["kandidat"].append(alt)
+    isi_route_existing(hasil, G, byid, L)
+    from . import cek_gambar as _cg
+    _dj = _cg.JalanDekat(jalan)
+    rapikan_gambar_data(hasil, G, prm, getattr(data, "gambar_rusak", None),   # sesudah label route/colo
+                        (lambda p: _dj(*L.balik(p))) if _dj else None, L)
     hasil["penomoran"] = penomoran(hasil, data)
     hasil["lokal"] = (F[0], F[1])
     hasil["alasan"].insert(0, ringkasan_awam(hasil, prm))
@@ -651,6 +684,8 @@ def analisis(fdt, data, prm=None, log=None):
     besar = [[L.ke(p) for p in j["ll"]] for j in jalan if (j.get("kelas") or "").lower() in seberang]
     for r in ([hasil["terpilih"]["rute"]] if hasil.get("terpilih") else []) + ([hasil["feeder_baru"]] if hasil.get("feeder_baru") else []):
         r["seberang"] = _penyeberangan(r, besar)
+    from . import penjelasan as _pj
+    hasil["penjelasan"] = _pj.susun(hasil, prm)
     return hasil
 
 
@@ -762,27 +797,26 @@ def ringkasan_awam(h, prm):
     folder = "F%s_T%s" % (n.get("feeder"), n.get("t"))
     if kep in ("COLO", "COLO_CEK", "COLO_MANUAL") and k:
         siapa = (T("Feeder %d", "Feeder %d") % k["feeder_int"]) if k.get("feeder_int") else (k["nama"] or k["id"])
-        s = T("Keputusan: sambungkan FDT ini ke %s yang sudah ada dan pakai tube T%s (folder %s). Perlu kabel baru %s "
-              "dari titik sambung ke FDT", "Decision: connect this FDT to the existing %s and use tube T%s (folder %s). "
-              "It needs %s of new cable from the tap point to the FDT") % (siapa, n.get("t"), folder, m(k["kabel_baru_m"]))
+        s = T("Pakai %s yang sudah ada, tube T%s (folder %s). Kabel baru dari titik sambung ke FDT %s",
+              "Use the existing %s, tube T%s (folder %s). The new cable from the tap point to the FDT is %s") % (
+            siapa, n.get("t"), folder, m(k["kabel_baru_m"]))
         if k.get("colo_rasio") is not None and k["kabel_baru_m"] >= 50:
-            s += T(", %d%% di antaranya menumpang tiang yang sudah ada", ", %d%% of it on existing poles") % round(
-                100 * k["colo_rasio"])
+            s += T(", %d%% di tiang yang sudah ada", ", %d%% of it on existing poles") % round(100 * k["colo_rasio"])
         s += T(".", ".")
         if fb:
-            s += T(" Sebagai pembanding, feeder baru dari POP butuh %s kabel baru, ditambah OTB dan kabel 144 core.",
-                   " For comparison, a new feeder from the POP needs %s of new cable plus an OTB and a 144-fibre "
-                   "cable.") % m(fb["panjang_m"])
+            s += T(" Sebagai pembanding, feeder baru dari POP butuh %s kabel baru, belum termasuk OTB dan kabel 144 core.",
+                   " For comparison, a new feeder from the POP needs %s of new cable, not counting the OTB and the "
+                   "144-fibre cable.") % m(fb["panjang_m"])
         if kep == "COLO_CEK":
-            s += T(" Sisa tube feeder ini belum tercatat, jadi pastikan dulu masih ada yang kosong.",
-                   " This feeder's free tubes are not recorded, so first confirm one is free.")
+            s += T(" Tube-nya belum tercatat di data, jadi pastikan dulu masih kosong.",
+                   " The tube is not recorded in the data, so first make sure it is still free.")
         return s
     if kep == "FEEDER_BARU" and fb:
-        return T("Keputusan: buat feeder baru dari %s sepanjang %s (folder %s), karena tidak ada feeder yang sudah ada "
-                 "yang cocok.", "Decision: build a new feeder from %s, %s long (folder %s), because no existing feeder "
-                 "fits.") % (h["pop"]["nama"] if h.get("pop") else "POP", m(fb["panjang_m"]), folder)
-    return T("Keputusan: FDT ini perlu dirancang manual oleh desainer; alasannya di bawah.",
-             "Decision: this FDT needs to be designed by hand; the reason is below.")
+        return T("Buat feeder baru dari %s sepanjang %s (folder %s), karena belum ada feeder yang cocok.",
+                 "Build a new feeder from %s, %s long (folder %s), because no existing feeder fits.") % (
+            h["pop"]["nama"] if h.get("pop") else "POP", m(fb["panjang_m"]), folder)
+    return T("FDT ini perlu dirancang manual. Alasannya ada di bawah.",
+             "This FDT needs to be designed by hand. The reason is below.")
 
 
 def panjang_144(prm, feeder):
@@ -816,7 +850,7 @@ def komit(h, data, prm):
     n = h["penomoran"]
     kode = "F%d_T%d_TEMBUKU_%s" % (n["feeder"], n["t"], h["fdt"]["kode"])
     sel = h.get("terpilih")
-    core = int(prm["core_feeder_baru"] if h["keputusan"] == "FEEDER_BARU" else (sel or {}).get("core_cabang") or prm["core_cabang"])
+    core = int(core_feeder_baru(h, prm) if h["keputusan"] == "FEEDER_BARU" else (sel or {}).get("core_cabang") or prm["core_cabang"])
     if not data.compiles or data.compiles[-1].get("berkas") != "_TEMBUKU_BATCH":
         data.compiles.append({"pops": [], "traksi": {}, "kabel": [], "fdt": [], "berkas": "_TEMBUKU_BATCH"})
     c = data.compiles[-1]
@@ -847,7 +881,7 @@ def komit(h, data, prm):
         "kode": kode, "pop_folder": popf, "feeder": str(n["feeder"]), "berkas": "_TEMBUKU_BATCH", "fdt": [fdt],
         "kabel": [kab], "colo": colo, "closure": closure, "slack": [], "lain": [],
         "info": {"feeder": n["feeder"], "t": str(n["t"]), "tube": tube, "cluster": h["fdt"].get("cluster"),
-                 "area": h["fdt"].get("area")}}
+                 "area": h["fdt"].get("area") or h["fdt"].get("kode")}}
     c["kabel"].append(kab)
     c["fdt"].append(fdt)
     c.pop("_peta_traksi", None)
@@ -965,9 +999,9 @@ def sudut_arah(cosv):
 def vonis_kandidat(k):
     """Kesimpulan singkat satu kandidat feeder, dua bahasa."""
     if k["gagal"]:
-        return T("Ditolak: ", "Rejected: ") + gabung("; ", k["gagal"])
+        return T("Tidak dipakai: ", "Not used: ") + gabung("; ", k["gagal"])
     if k["catatan"]:
-        return T("Bisa dipakai, tetapi ", "Usable, but ") + gabung("; ", k["catatan"])
+        return T("Bisa dipakai, dengan catatan: ", "Usable, with a note: ") + gabung("; ", k["catatan"])
     return T("Memenuhi semua syarat", "Meets every condition")
 
 
@@ -1017,7 +1051,7 @@ def hasil_gagal(fdt, data, prm, galat):
     h = {"fdt": fdt, "pop": pop, "jarak_pop_m": round(geo.haversine(F, pop["ll"])) if pop else 0, "peringatan": [],
          "kandidat": [], "keputusan": "PERLU_MANUAL", "terpilih": None, "feeder_baru": None, "n_kabel_diperiksa": 0,
          "n_kandidat_kapasitas": 0, "ada_jalan": False, "lokal": (F[0], F[1]),
-         "alasan": [T("Tembuku gagal menganalisis FDT ini (%s). Rancang FDT ini secara manual.",
+         "alasan": [T("Tembuku belum bisa menganalisis FDT ini (%s), jadi perlu dirancang manual.",
                       "Tembuku could not analyse this FDT (%s). Design this FDT by hand.") % galat]}
     try:
         h["penomoran"] = penomoran(h, data)
@@ -1141,7 +1175,8 @@ def _nilai_kandidat(G, k, pilihan, prevA, distB, prevB, prm, P, byid, tanda, kor
     koridor = None
     if k["sumber"] == "COMPILE" and fe is not None:
         koridor = _bagian_di_koridor(rute["titik"], koridor_feeder.get((k.get("pop_nama"), fe), []))
-    # aturan 6 km (PDF 3.1): cabang 48F hanya bila jalur POP->FDT <= batas; lebih jauh lewat kabel 96F (T1-T8), dan
+    # aturan jarak 48/96 (PDF 3.1; batas 4 km sejak arahan 18-11-2026, dulu 6 km): cabang 48F hanya bila jalur
+    # POP->FDT <= batas; lebih jauh lewat kabel 96F (T1-T8), dan
     # kabel baru yang ditarik ke FDT juga 96 core (seperti plugin acuan v0.10.7: kelas kabel dari panjang POP-FDT)
     batas_m = float(prm["batas_48f_km"]) * 1000.0
     if jalur_serat > batas_m:
@@ -1155,8 +1190,15 @@ def _nilai_kandidat(G, k, pilihan, prevA, distB, prevB, prm, P, byid, tanda, kor
                 alasan.append(T("jarak POP ke FDT %s, lebih dari %s, jadi dipakai kabel 96 core dari closure 144 (%s)",
                                 "the POP-to-FDT route is %s, over %s, so a 96-fibre cable from the closure 144 is used (%s)")
                               % (km(jalur_serat), km(batas_m), _teks_tube(info["bebas"])))
-                if st == "PENUH" and info["bebas"]:
+                # kelompok berganti: status dihitung ulang dari tube kosong kelompok 96F (termasuk kebutuhan proyek)
+                cukup = len(info["bebas"]) >= prm["cadangan_tube"] + int(info.get("butuh") or prm["tube_per_fdt"])
+                if st == "PENUH" and cukup:
                     st = "LOLOS"
+                elif st == "LOLOS" and not cukup:
+                    st = "PENUH"
+                    teks = T("hanya %d tube kosong di jalur 96F (%s), proyek ini butuh %d",
+                             "only %d free tube(s) on the 96F path (%s), this project needs %d") % (
+                        len(info["bebas"]), _teks_tube(info["bebas"]), int(info.get("butuh") or 1))
             else:
                 gagal.append(T("jarak POP ke FDT %s, lebih dari %s, sehingga perlu kabel 96 core, tetapi tube T1-T8 "
                                "feeder ini sudah penuh",
@@ -1178,7 +1220,7 @@ def _nilai_kandidat(G, k, pilihan, prevA, distB, prevB, prm, P, byid, tanda, kor
         elif info["kelompok"] == "48F":
             core_cabang = 48
     if st == "PENUH":
-        gagal.append(T("tidak ada tube kosong (%s)", "no free tube (%s)") % teks)
+        gagal.append(T("tidak ada tube kosong. %s", "no free tube. %s") % teks)
     elif st == "BELUM_TERVERIFIKASI":
         alasan.append(T("sisa tube belum bisa dipastikan (%s): cek di lapangan",
                         "free tubes cannot be confirmed (%s): check on site") % teks)
@@ -1203,7 +1245,7 @@ def _nilai_kandidat(G, k, pilihan, prevA, distB, prevB, prm, P, byid, tanda, kor
                          % ((T("utara", "north"), T("selatan", "south")) if dy_fdt > 0 else
                             (T("selatan", "south"), T("utara", "north"))))
     di_pop = P is not None and math.hypot(G.xy[v][0] - P[0], G.xy[v][1] - P[1]) <= JARAK_POP_M
-    # aturan 6 km juga menentukan kelompok: <= 6 km cabang 48F (T9-T12), > 6 km kabel 96F (T1-T8)
+    # aturan jarak juga menentukan kelompok: <= batas cabang 48F (T9-T12), > batas kabel 96F (T1-T8)
     perlu = "48F" if jalur_serat <= batas_m else "96F"
     sesuai = not info.get("kelompok") or info["kelompok"] == perlu
     if not sesuai and prm.get("utamakan_aturan_6km", False):
@@ -1306,6 +1348,401 @@ def _nilai_kandidat(G, k, pilihan, prevA, distB, prevB, prm, P, byid, tanda, kor
             "biaya_relatif": round(biaya_rel), "colo_pole_m": round(tiang), "new_infra_m": round(infra_baru)}
 
 
+def info_route(G, byid, L, bagian_xy, tol=12.0, langkah=10.0, min_m=30.0, celah_m=30.0):
+    """Informasi Route Existing (arahan 18-11-2026): kabel inventaris existing yang dilalui garis yang DIGAMBAR (COLO
+    CABLE POP->titik sambung, lalu kabel baru ke FDT). Garis ditelusuri tiap 'langkah' m; titik dianggap menumpang kabel
+    inventaris bila berjarak <= tol (satu tiang/koridor, seperti sambung_kabel_m). Beberapa kabel sering berbagi satu
+    jalur tiang, jadi di tiap titik dipilih kabel yang menemani rute paling panjang (lalu kabel titik sebelumnya, lalu
+    nama) - daftarnya pendek dan stabil, tidak berpindah-pindah antar kabel paralel. Potongan < min_m dibuang, potongan
+    kabel yang sama yang terputus <= celah_m disambung. Urutan = urutan di sepanjang rute.
+    bagian_xy: [(bagian, [xy lokal])]. -> [{nama, descr2, bagian, model, owner, product, panjang_m, ll}]."""
+    nasional = {r for r, k in byid.items() if k.get("sumber") == "NASIONAL" and k.get("xy")}
+    if not nasional:
+        return []
+
+    def kunci_dari(k):      # satu kabel = NAME + DESCR2 (potongan indeks dari kabel yang sama digabung)
+        return (str(k.get("nama") or "").strip() or "-", str(k.get("descr2") or "").strip() or "-")
+    titik = []              # [(bagian, xy, {kunci: ref})] - kabel inventaris dalam toleransi di tiap titik
+    cakupan = {}
+    for bagian, xy in bagian_xy:
+        if not xy or len(xy) < 2:
+            continue
+        pts = geo.rapatkan(list(xy), langkah)
+        total = max(geo.panjang(pts), 1e-9)
+        s = 0.0
+        for i, p in enumerate(pts):
+            if i:
+                s += math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1])
+            f = min(1.0, s / total)         # posisi 0..1 di bagian ini (untuk memindah gambar ke rute yang dirapikan)
+            refs = set()
+            for _d, j in G.dekat(p, tol + 2 * langkah):
+                refs |= G.refs[j] & nasional
+            ada = {}
+            for r in sorted(refs, key=str):
+                kc = kunci_dari(byid[r])
+                if kc not in ada and geo.dekat_garis(p, byid[r]["xy"], tol):
+                    ada[kc] = r
+            for kc in ada:
+                cakupan[kc] = cakupan.get(kc, 0) + 1
+            titik.append((bagian, p, ada, f))
+    pot = []
+    kc0 = None
+    for bagian, p, ada, f in titik:
+        kc = None
+        if ada:
+            kc = max(ada, key=lambda x: (cakupan[x], x == kc0, x))
+        if pot and pot[-1]["kunci"] == kc and pot[-1]["bagian"] == bagian:
+            pot[-1]["xy"].append(p)
+            pot[-1]["f1"] = f
+        else:
+            if pot and pot[-1]["bagian"] == bagian:
+                pot[-1]["xy"].append(p)         # potongan bersambung ujung ke ujung (tanpa celah di peta)
+                pot[-1]["f1"] = f
+            pot.append({"kunci": kc, "k": byid[ada[kc]] if kc else None, "bagian": bagian, "xy": [p], "f0": f, "f1": f})
+        kc0 = kc
+    # potongan pendek (lompatan antar kabel paralel) dibuang, lalu kabel sama yang terpisah celah pendek disambung
+    pot = [x for x in pot if x["kunci"] is None or geo.panjang(x["xy"]) >= min_m]
+    gab = []
+    for x in pot:
+        if x["kunci"] is None:
+            if gab:
+                gab[-1]["_celah"] = gab[-1].get("_celah", []) + x["xy"]
+            continue
+        if gab and gab[-1]["kunci"] == x["kunci"] and gab[-1]["bagian"] == x["bagian"] and \
+                geo.panjang(gab[-1].get("_celah", [])) <= celah_m:
+            gab[-1]["xy"].extend(x["xy"])
+            gab[-1]["f1"] = x["f1"]
+            gab[-1].pop("_celah", None)
+            continue
+        if gab:
+            gab[-1].pop("_celah", None)
+        gab.append(x)
+    out = []
+    for x in gab:
+        pjg = geo.panjang(x["xy"])
+        if pjg < min_m or len(x["xy"]) < 2:
+            continue
+        k = x["k"]
+        out.append({"nama": x["kunci"][0], "descr2": x["kunci"][1], "bagian": x["bagian"],
+                    "model": k.get("model") or "", "owner": k.get("owner") or "", "product": k.get("product") or "",
+                    "panjang_m": round(pjg), "ll": [L.balik(p) for p in x["xy"]], "f0": x["f0"], "f1": x["f1"]})
+    return out
+
+
+def _potong_xy(xy, f0, f1):
+    """Potongan garis xy dari posisi f0 sampai f1 (0..1 sepanjang garis)."""
+    if not xy or len(xy) < 2:
+        return []
+    cum = [0.0]
+    for a, b in zip(xy, xy[1:]):
+        cum.append(cum[-1] + math.hypot(b[0] - a[0], b[1] - a[1]))
+    total = cum[-1]
+    if total <= 0:
+        return []
+    s0, s1 = max(0.0, min(f0, f1)) * total, min(1.0, max(f0, f1)) * total
+
+    def di(s):
+        for i in range(len(xy) - 1):
+            if cum[i] <= s <= cum[i + 1]:
+                d = cum[i + 1] - cum[i]
+                t = 0.0 if d <= 0 else (s - cum[i]) / d
+                return (xy[i][0] + t * (xy[i + 1][0] - xy[i][0]), xy[i][1] + t * (xy[i + 1][1] - xy[i][1])), i
+        return xy[-1], len(xy) - 2
+    p0, i0 = di(s0)
+    p1, i1 = di(s1)
+    return [p0] + [xy[i] for i in range(i0 + 1, i1 + 1)] + [p1]
+
+
+def _geser_info_route(daftar, peta, L):
+    """Informasi Route Existing dipindah ke gambar rute yang sudah dirapikan: kabel inventarisnya tetap hasil pencocokan
+    dengan data asli, garisnya dipotong dari rute baru pada posisi yang sama (seperti keterangan COLO CABLE)."""
+    for d in daftar or []:
+        xy = peta.get(d.get("bagian"))
+        if not xy or "f0" not in d:
+            continue
+        seg = _potong_xy(xy, d["f0"], d["f1"])
+        if len(seg) >= 2:
+            d["ll"] = [L.balik(p) for p in seg]
+            d["panjang_m"] = round(geo.panjang(seg))
+
+
+def label_colo_kabel(k):
+    """Keterangan COLO CABLE dari kabel yang dilalui (arahan atasan 18-11-2026): kabel feeder compile ->
+    'Colo Cable F6 Feeder Perumahan karlia asri' (nomor feeder + nama cluster traksi pemilik kabel itu); kabel
+    inventaris -> 'Colo Cable <NAME> (<DESCR2>)'."""
+    if k.get("sumber") == "COMPILE":
+        fe = _angka_feeder(k.get("feeder"))
+        area = str(k.get("area") or "").strip()
+        if not area:
+            area = re.sub(r"\.km[lz]$", "", str(k.get("traksi") or ""), flags=re.I)
+        return ("Colo Cable F%d Feeder %s" % (fe, area)) if fe is not None else ("Colo Cable %s" % area)
+    nama = str(k.get("nama") or "").strip() or "-"
+    d2 = str(k.get("descr2") or "").strip()
+    return "Colo Cable %s%s" % (nama, " (%s)" % d2 if d2 and d2 != nama else "")
+
+
+def colo_route(G, byid, xy, fe_pakai=None, pop_pakai=None, label_awal=None, tol=30.0, langkah=10.0, min_m=60.0):
+    """Arahan atasan 18-11-2026: keterangan COLO CABLE mengikuti rute kabel feeder yang dilalui; bila melewati lebih
+    dari satu cluster, garisnya dipecah per cluster sesuai urutan rute. Serat colo secara fisik selalu di kabel feeder
+    yang dipakai, jadi yang boleh disebut hanya kabel compile (cluster/traksi) DARI FEEDER ITU; kabel inventaris
+    existing dicantumkan terpisah di folder 'Informasi Route Existing'. Garis COLO CABLE yang digambar (POP -> titik
+    sambung) ditelusuri tiap 'langkah' m dan dicocokkan dengan kabel feeder itu dalam 'tol' m (garis compile buatan
+    desainer tidak selalu tepat di jalur tiang); di jalur bersama dipilih cluster yang menemani rute paling panjang.
+    Bagian yang tidak terlacak dan potongan < min_m ikut potongan sebelumnya (garis tidak berlubang).
+    -> [{label, s0, s1}] dengan s0/s1 = posisi (0..1) di sepanjang garis."""
+    if not xy or len(xy) < 2:
+        return []
+    from . import sumber
+
+    def milik_feeder(k):
+        if k.get("sumber") != "COMPILE" or k.get("koridor") or k.get("jenis") != "NEW_CABLE" or not k.get("xy"):
+            return False
+        if fe_pakai is None:
+            return True
+        if _angka_feeder(k.get("feeder")) != fe_pakai:
+            return False
+        a, b = str(k.get("pop_folder") or ""), str(pop_pakai or "")
+        return not b or a == b or sumber.kunci_pop(a) == sumber.kunci_pop(b)
+    calon = {r for r, k in byid.items() if milik_feeder(k)}
+    if not calon:
+        return [{"label": label_awal, "s0": 0.0, "s1": 1.0}] if label_awal else []
+    pts = geo.rapatkan(list(xy), langkah)
+    jarak = [0.0]
+    for a, b in zip(pts, pts[1:]):
+        jarak.append(jarak[-1] + math.hypot(b[0] - a[0], b[1] - a[1]))
+    total = jarak[-1]
+    if total <= 0:
+        return []
+    per_titik, cakupan, info_label = [], {}, {}
+    for p in pts:
+        refs = set()
+        for _d, j in G.dekat(p, tol + 2 * langkah):
+            refs |= G.refs[j] & calon
+        ada = {}
+        for r in sorted(refs, key=str):
+            k = byid[r]
+            lab = label_colo_kabel(k)
+            if lab not in ada and geo.dekat_garis(p, k["xy"], tol):
+                ada[lab] = r
+                info_label[lab] = (k.get("sumber") == "COMPILE", fe_pakai is not None and
+                                   _angka_feeder(k.get("feeder")) == fe_pakai)
+        for lab in ada:
+            cakupan[lab] = cakupan.get(lab, 0) + 1
+        per_titik.append(ada)
+    runs = []          # [label, jarak awal, jarak akhir]
+    lab0 = None
+    for i, ada in enumerate(per_titik):
+        lab = None
+        if ada:
+            lab = max(ada, key=lambda x: (info_label[x][0], info_label[x][1], cakupan[x], x == lab0, x))
+        if lab is None:
+            lab = lab0                     # bagian tanpa kabel: ikut potongan sebelumnya
+        if runs and runs[-1][0] == lab:
+            runs[-1][2] = jarak[i]
+        else:
+            if runs:
+                runs[-1][2] = jarak[i]
+            runs.append([lab, jarak[i], jarak[i]])
+        lab0 = lab
+    if runs:
+        runs[-1][2] = total
+    if runs and runs[0][0] is None and len(runs) > 1:      # awal garis tanpa kabel: ikut potongan berikutnya
+        runs[1][1] = 0.0
+        runs.pop(0)
+    if runs and runs[0][0] is None:                        # tidak ada yang terlacak: satu garis, label feeder dipakai
+        runs[0][0] = label_awal
+    # potongan pendek (lompatan antar kabel paralel) digabung ke potongan sebelumnya, lalu label sama disatukan
+    rapi = []
+    for r in runs:
+        if rapi and (r[2] - r[1] < min_m or r[0] is None or r[0] == rapi[-1][0]):
+            rapi[-1][2] = r[2]
+        else:
+            rapi.append(list(r))
+    if len(rapi) > 1 and rapi[0][2] - rapi[0][1] < min_m:
+        rapi[1][1] = rapi[0][1]
+        rapi.pop(0)
+    gab = []
+    for r in rapi:
+        if gab and gab[-1][0] == r[0]:
+            gab[-1][2] = r[2]
+        else:
+            gab.append(r)
+    return [{"label": r[0], "s0": round(r[1] / total, 6), "s1": round(r[2] / total, 6)} for r in gab if r[0]]
+
+
+def isi_route_existing(h, G, byid, L):
+    """Isi 'route_existing' dan 'colo_route' untuk setiap kandidat (dipakai juga bila desainer memilih kandidat lain di
+    panel) dan untuk feeder baru."""
+    for k in h.get("kandidat") or []:
+        colo = k.get("colo_gambar_xy") or k.get("colo_xy") or []
+        k["route_existing"] = info_route(G, byid, L, [("POP - titik sambung", colo),
+                                                      ("kabel baru", (k.get("rute") or {}).get("titik") or [])])
+        sendiri = byid.get(k.get("id")) or {}
+        awal = label_colo_kabel(sendiri) if sendiri.get("sumber") == "COMPILE" else None
+        k["colo_route"] = colo_route(G, byid, colo, k.get("feeder_int"), k.get("pop_folder"), awal)
+    fb = h.get("feeder_baru")
+    if fb:
+        fb["route_existing"] = info_route(G, byid, L, [("kabel baru", fb.get("titik") or [])])   # POP -> FDT
+
+
+def _cg_nama(jenis, inggris=False):
+    from . import cek_gambar
+    return (cek_gambar.NAMA_EN if inggris else cek_gambar.NAMA).get(jenis, jenis)
+
+
+def _dekat_jalan(G, p, r):
+    """Simpul jalan (bukan simpul kabel) terdekat dalam r meter -> (jarak, simpul) atau None."""
+    d = G.dekat(p, r, lambda j: not G.refs[j] and any(e[3] == "JALAN" for e in G.adj[j]))
+    return d[0] if d else None
+
+
+def ikuti_jalan(G, xy, min_m=300.0, faktor=1.4, tambah_m=40.0, ujung_m=60.0, dekat=None):
+    """1.6.0 - perbaiki GAMBAR data existing yang salah bentuk. Kabel compile/inventaris kadang digambar dengan bentang
+    lurus ratusan meter sampai 1,5 km yang memotong rumah (Jambi F7: 1.496 m lurus dari OTB). Bentang tiang nyata
+    40-50 m, jadi bentang lurus >= min_m adalah gambar yang disederhanakan, bukan jalur kabelnya. Bentang seperti itu
+    digambar ulang mengikuti jalan di antara kedua ujungnya, bila jalan itu tidak jauh lebih panjang (<= faktor x lurus
+    + tambah_m). Bentang yang memang sudah menempel jalan lurus dibiarkan. Hanya gambar: keputusan, biaya dan redaman
+    tetap dihitung dari data aslinya.
+    -> (xy baru, panjang bentang lurus yang diganti, panjang bentang lurus yang tidak bisa diganti)."""
+    from .tulis_kmz import rapikan_garis
+    p = rapikan_garis(xy) if len(xy) > 2 else list(xy)
+    if len(p) < 2:
+        return list(xy), 0.0, 0.0
+    out, ganti, sisa = [p[0]], 0.0, 0.0
+    for a, b in zip(p, p[1:]):
+        d = math.hypot(b[0] - a[0], b[1] - a[1])
+        if d < min_m:
+            out.append(b)
+            continue
+        n = max(2, int(d // 30.0))
+        # dekat jalan = dekat GARIS jalan (dirapatkan 10 m), sama dengan pemeriksaan input (cek_gambar.JalanDekat);
+        # bukan dekat titik sudut jalan, yang di jalan lurus bisa ratusan meter jaraknya
+        uji = dekat if dekat is not None else (lambda p: _dekat_jalan(G, p, 15.0))
+        kena = sum(1 for i in range(1, n) if uji((a[0] + (b[0] - a[0]) * i / n, a[1] + (b[1] - a[1]) * i / n)))
+        if kena >= 0.8 * (n - 1):           # bentang lurus di sepanjang jalan lurus: sudah benar
+            out.append(b)
+            continue
+        ja, jb = _dekat_jalan(G, a, ujung_m), _dekat_jalan(G, b, ujung_m)
+        baru = None
+        if ja and jb and ja[1] != jb[1]:
+            batas = faktor * d + tambah_m
+            dist, prev = G.dijkstra(ja[1], jenis_boleh=("JALAN",), maks=batas * 2.0)
+            if dist[jb[1]] < INF:
+                jl = [G.xy[s] for s, _j, _r in G.jalur(prev, jb[1])]
+                if ja[0] + geo.panjang(jl) + jb[0] <= batas:
+                    baru = jl
+        if baru:
+            out.extend(baru)
+            out.append(b)
+            ganti += d
+        else:
+            out.append(b)
+            sisa += d
+    if ganti:
+        out = rapikan_garis(out, taji_m=60.0)      # taji kecil di sambungan ujung bentang - jalan
+    return out, ganti, sisa
+
+
+def rapikan_gambar_data(h, G, prm, rusak=None, dekat=None, L=None):
+    """Terapkan ikuti_jalan pada gambar COLO CABLE dan ruas tiang (compile/nasional) semua kandidat dan feeder baru;
+    catat untuk desainer bila gambar diperbaiki atau masih ada bentang lurus panjang yang tidak bisa diperbaiki.
+    Dampak (1.6.0): keputusan dihitung dari gambar masukan; bila gambar yang diperbaiki mengikuti jalan membuat jalur serat
+    melewati batas kabel 48 core atau menghabiskan cadangan redaman, desainer diberi peringatan keras (keputusan tidak
+    diubah otomatis agar hasil tetap stabil dan dapat dilacak ke data masukan)."""
+    def ruas(rute):
+        g = s = tambah = 0.0
+        for sg in rute.get("segmen") or []:
+            if sg[0] in (TIANG_NASIONAL, TIANG_COMPILE) and len(sg[2]) >= 2:
+                awal = geo.panjang(sg[2])
+                sg[2], a, b = ikuti_jalan(G, sg[2], dekat=dekat)
+                g, s = g + a, s + b
+                if a:
+                    tambah += geo.panjang(sg[2]) - awal
+        if g:
+            titik = []
+            for sg in rute["segmen"]:
+                titik.extend(sg[2] if not titik else sg[2][1:])
+            rute["titik"] = titik
+        return g, s, tambah
+
+    for k in h.get("kandidat") or []:
+        if k.get("_dirapikan"):
+            continue
+        k["_dirapikan"] = True
+        g = s = tambah = 0.0
+        colo = k.get("colo_gambar_xy") or k.get("colo_xy")
+        if colo and len(colo) >= 2:
+            awal = geo.panjang(colo)
+            k["colo_gambar_xy"], g, s = ikuti_jalan(G, colo, dekat=dekat)
+            if g:
+                tambah = geo.panjang(k["colo_gambar_xy"]) - awal
+        if k.get("rute"):
+            a, b, c = ruas(k["rute"])
+            g, s, tambah = g + a, s + b, tambah + c
+        k["gambar_diperbaiki_m"], k["gambar_lurus_m"], k["gambar_tambah_m"] = round(g), round(s), round(max(0.0, tambah))
+        if g and L is not None:
+            _geser_info_route(k.get("route_existing"), {"POP - titik sambung": k.get("colo_gambar_xy") or k.get("colo_xy"),
+                                                        "kabel baru": (k.get("rute") or {}).get("titik")}, L)
+    fb = h.get("feeder_baru")
+    if fb:
+        g, s, tambah = ruas(fb)
+        fb["gambar_diperbaiki_m"], fb["gambar_lurus_m"], fb["gambar_tambah_m"] = round(g), round(s), round(max(0.0, tambah))
+        if g and L is not None:
+            _geser_info_route(fb.get("route_existing"), {"kabel baru": fb.get("titik")}, L)
+    obj = h.get("terpilih") or (fb if h.get("keputusan") == "FEEDER_BARU" else None)
+    if obj and rusak:
+        sendiri = [obj.get("id")] if obj is h.get("terpilih") else []
+        dipakai = [r for r in dict.fromkeys(sendiri + list((obj.get("rute") or obj).get("ref_kabel") or [])) if r in rusak]
+        if dipakai:
+            h["pakai_kabel_janggal"] = True
+            h["peringatan"].append(T(
+                "Salah satu kabel existing yang dipakai gambarnya kurang rapi di data masukan (%s). Kabelnya tetap dipakai "
+                "karena tube-nya memang ada; cukup rapikan gambar aslinya di compile atau inventaris. Lokasinya ada di "
+                "daftar Pemeriksaan data masukan.",
+                "One of the existing cables used here is drawn poorly in the input data (%s). It is still used because "
+                "its tubes are real; just tidy the original drawing in the compilation or inventory. The location is in "
+                "the input check list.") % gabung(", ", [
+                    T(_cg_nama(x["jenis"]), _cg_nama(x["jenis"], True)) for r in dipakai for x in rusak[r]][:3]))
+    if obj and obj.get("gambar_tambah_m", 0) >= 50:
+        tambah = obj["gambar_tambah_m"]
+        js = (obj.get("jalur_serat_m") or obj.get("panjang_est_m") or 0)
+        batas = float(prm.get("batas_48f_km", 4.0)) * 1000.0
+        core = obj.get("core_cabang") or obj.get("core")
+        if core == 48 and js <= batas < js + tambah:
+            p = T("Kalau diukur mengikuti jalan, jalur serat dari POP jadi %s, bukan %s seperti di gambar. Itu sudah lewat "
+                  "%s, jadi kabelnya seharusnya 96 core (tube T1-T8). Tolong pastikan jalur kabel existing di lapangan.",
+                  "Measured along the road, the fibre route from the POP is %s, not %s as drawn. That is past %s, so the "
+                  "cable should be 96 fibres (tubes T1-T8). Please check the existing cable route on site.") % (
+                km(js + tambah), km(js), km(batas))
+            h["peringatan"].insert(0, p)
+            h.setdefault("penting", []).append(p)
+        mg = (obj.get("budget") or {}).get("margin_db")
+        if mg is not None:
+            turun = tambah / 1000.0 * float(prm.get("fiber_db_km", 0.40))
+            if mg >= 0 > mg - turun:
+                p = T("Kalau diukur mengikuti jalan, jalurnya %s lebih panjang dan sisa redaman turun dari %s dB jadi %s dB. "
+                      "Cadangannya jadi terpakai, jadi sebaiknya diukur di lapangan.",
+                      "Measured along the road, the route is %s longer and the signal margin drops from %s dB to %s dB. "
+                      "The reserve gets used, so measure it on site.") % (
+                    m(tambah), ("%.1f" % mg).replace(".", ","), ("%.1f" % (mg - turun)).replace(".", ","))
+                h["peringatan"].insert(0, p)
+                h.setdefault("penting", []).append(p)
+    if obj:
+        if obj.get("gambar_diperbaiki_m"):
+            h["peringatan"].append(T(
+                "Di data masukan, sebagian kabel existing digambar sebagai garis lurus panjang yang tidak mengikuti jalan. "
+                "Di hasil ini %s di antaranya sudah digambar ulang mengikuti jalan. Cek sebentar apakah kabelnya memang "
+                "lewat jalan itu.", "In the input data, part of the existing cable is drawn as long straight lines that "
+                "follow no road. In this result %s of it has been redrawn along the road. Take a quick look that the "
+                "cable really runs there.") % m(obj["gambar_diperbaiki_m"]))
+        if obj.get("gambar_lurus_m", 0) >= 300:
+            h["peringatan"].append(T(
+                "Masih ada %s garis lurus panjang yang tidak bisa dirapikan karena tidak ada jalan di dekatnya. Kalau di "
+                "Google Earth ternyata memotong bangunan, gambar ulang secara manual.",
+                "There is still %s of long straight line that could not be tidied because no road is nearby. If it "
+                "crosses buildings in Google Earth, redraw it by hand.") % m(obj["gambar_lurus_m"]))
+
+
 def _rakit_rute(G, prev, tujuan, byid, faktor_bantu=1.35):
     """Jalur dari tujuan (tap/POP) ke FDT dipecah per jenis infrastruktur."""
     jl = G.jalur(prev, tujuan)
@@ -1403,6 +1840,28 @@ def _alasan_urut(k, x):
     return T("kabel barunya lebih pendek", "its new cable is shorter")
 
 
+def _ikut_feeder_proyek(lolos, h):
+    """FDT kedua dst. dalam satu proyek: kandidat di feeder yang dipakai FDT pertama proyek itu didahulukan (urutan lain
+    tetap), supaya satu cluster tidak terpecah ke beberapa feeder."""
+    pf = (h.get("fdt") or {}).get("_proyek_feeder")
+    if not pf or not lolos:
+        return lolos
+    from . import sumber
+
+    def sama(k):
+        if k.get("feeder_int") != pf.get("feeder"):
+            return False
+        a, b = str(k.get("pop_folder") or ""), str(pf.get("pop_folder") or "")
+        return a == b or sumber.kunci_pop(a) == sumber.kunci_pop(b)
+    depan = [k for k in lolos if sama(k)]
+    if not depan:
+        return lolos
+    depan[0].setdefault("catatan", []).append(T(
+        "feeder yang sama dengan FDT %s dalam proyek ini, supaya satu cluster tidak terpecah",
+        "the same feeder as FDT %s of this project, so one cluster is not split") % pf.get("kode", "-"))
+    return depan + [k for k in lolos if not sama(k)]
+
+
 def _putuskan(h, prm):
     fb = h["feeder_baru"]
     if h["pop"] is None:
@@ -1412,31 +1871,44 @@ def _putuskan(h, prm):
                              "No POP/OLT within %s, so free tubes, direction and signal loss cannot be proven. The "
                              "candidates in the table are for review only: design this FDT by hand.") % km(prm["pop_maks_m"]))
         return
+    tolak_memutar = bool(prm.get("tolak_jalur_memutar", False))
     for k in h["kandidat"]:
         k["rasio_jalur"] = round(k["jalur_serat_m"] / fb["panjang_est_m"], 2) if fb and fb["panjang_est_m"] > 0 else None
         k["gagal_lain"] = len(k["gagal"])       # alasan tolak selain 'memutar' (dipakai penentuan zona batas)
         if k["rasio_jalur"] is not None and k["rasio_jalur"] > prm["rasio_jalur_maks"]:
-            k["gagal"].append(T("jalurnya memutar terlalu jauh: lewat feeder ini totalnya %s, sedangkan feeder baru "
-                                "langsung dari POP hanya %s (paling banyak %s panjangnya)",
-                                "the route goes too far round: through this feeder it is %s in total, while a new "
-                                "feeder straight from the POP is only %s (at most %s as long)") % (
-                km(k["jalur_serat_m"]), km(fb["panjang_est_m"]), kali(prm["rasio_jalur_maks"])))
-            k["lolos"] = False
-            k["skor"] *= 2.0
+            if tolak_memutar:
+                k["gagal"].append(T("jalurnya memutar terlalu jauh: lewat feeder ini totalnya %s, sedangkan feeder baru "
+                                    "langsung dari POP hanya %s (paling banyak %s panjangnya)",
+                                    "the route goes too far round: through this feeder it is %s in total, while a new "
+                                    "feeder straight from the POP is only %s (at most %s as long)") % (
+                    km(k["jalur_serat_m"]), km(fb["panjang_est_m"]), kali(prm["rasio_jalur_maks"])))
+                k["lolos"] = False
+                k["skor"] *= 2.0
+            else:
+                # arahan atasan 18-11-2026: tube kosong di feeder existing dipakai; jalur panjang hanya dicatat. Feeder
+                # yang jalurnya wajar tetap didahulukan (lihat di bawah): feeder yang memutar dipakai hanya bila
+                # pilihan lainnya adalah membuat feeder baru
+                k["memutar"] = True
+                k["catatan"].append(T("jalur lewat feeder ini %s, lebih panjang dari feeder baru langsung dari POP (%s), "
+                                      "tetapi feeder ini tetap dipakai karena masih ada tube kosong",
+                                      "the route through this feeder is %s, longer than a new feeder straight from the "
+                                      "POP (%s), but this feeder is still used because it has a free tube") % (
+                    km(k["jalur_serat_m"]), km(fb["panjang_est_m"])))
     lolos = _urut_setara([k for k in h["kandidat"] if k["lolos"]], bool(prm.get("utamakan_aturan_6km", False)), prm)
+    lolos = [k for k in lolos if not k.get("memutar")] + [k for k in lolos if k.get("memutar")]
+    lolos = _ikut_feeder_proyek(lolos, h)
     lain = [k for k in h["kandidat"] if not k["lolos"]]
     lain.sort(key=lambda d: d["skor"])
     h["kandidat"] = lolos + lain
-    near = [k for k in h["kandidat"][:3] if k["rasio_jalur"] is not None and not k.get("gagal_lain", len(k["gagal"]))
-            and abs(k["rasio_jalur"] - prm["rasio_jalur_maks"]) <= prm["zona_batas"]]
+    near = [k for k in h["kandidat"][:3] if tolak_memutar and k["rasio_jalur"] is not None and
+            not k.get("gagal_lain", len(k["gagal"])) and abs(k["rasio_jalur"] - prm["rasio_jalur_maks"]) <= prm["zona_batas"]]
     if near:
         h["batas"] = True
-        h["peringatan"].append(T("Perlu ditinjau: memakai feeder %s dan membuat feeder baru hampir sama baiknya (jalur "
-                                 "lewat feeder ini %s panjang feeder baru, batasnya %s). Periksa keduanya sebelum "
-                                 "memutuskan.",
-                                 "Please review: using feeder %s and building a new feeder are almost equally good (the "
-                                 "route through this feeder is %s a new feeder, the limit is %s). Check both before "
-                                 "deciding.") % (near[0]["nama"] or near[0]["id"], kali(near[0]["rasio_jalur"]),
+        h["peringatan"].append(T("Dua pilihan hampir sama bagusnya: memakai feeder %s, atau membuat feeder baru (jalur lewat "
+                                 "feeder ini %s panjang feeder baru, batasnya %s). Sebaiknya lihat keduanya dulu.",
+                                 "Two options are almost equally good: using feeder %s, or building a new feeder (the "
+                                 "route through this feeder is %s a new feeder, the limit is %s). Worth looking at "
+                                 "both.") % (near[0]["nama"] or near[0]["id"], kali(near[0]["rasio_jalur"]),
                                                  kali(prm["rasio_jalur_maks"])))
     cek = [k for k in h["kandidat"] if not k["gagal"] and k["kapasitas"] == "BELUM_TERVERIFIKASI"]
     if lolos:
@@ -1444,15 +1916,15 @@ def _putuskan(h, prm):
         h["keputusan"], h["terpilih"] = "COLO", k
         inf = k.get("kap_info") or {}
         bud = k.get("budget") or {}
-        h["alasan"].append(T("Alasannya: kabel %s masih punya tube kosong, arahnya menuju FDT, dan kekuatan sinyal sampai "
-                             "pelanggan masih dalam batas (redaman %s, batasnya %s; ditambah margin cadangan %s).",
-                             "Why: cable %s still has a free tube, runs toward the FDT, and the signal at the customer "
-                             "is within the limit (loss %s, limit %s; plus a reserve margin of %s).") % (
+        h["alasan"].append(T("%s masih punya tube kosong, arahnya menuju FDT, dan sinyal sampai pelanggan masih aman "
+                             "(redaman %s dari batas %s, di luar cadangan %s).",
+                             "%s still has a free tube, runs toward the FDT, and the signal at the customer is fine "
+                             "(loss %s of the %s limit, besides a %s reserve).") % (
             k["nama"] or k["id"], db((bud.get("total_db") or 0) - prm["margin_db"]), db(prm["kelas_olt_db"]),
             db(prm["margin_db"])))
         if k.get("biaya_relatif") is not None:
-            h["alasan"].append(T("Biaya relatif paling murah: %s (colo cable %s x%s, colo pole %s x%s, new infra %s x%s).",
-                                 "Lowest relative cost: %s (colo cable %s x%s, colo pole %s x%s, new infra %s x%s).") % (
+            h["alasan"].append(T("Biayanya paling hemat: %s (numpang kabel %s x%s, numpang tiang %s x%s, tiang baru %s x%s).",
+                                 "The lowest cost: %s (riding cable %s x%s, riding poles %s x%s, new poles %s x%s).") % (
                 "{:,}".format(k["biaya_relatif"]).replace(",", "."), m(k.get("colo_m") or 0),
                 prm.get("biaya_colo_cable", 1), m(k.get("colo_pole_m") or 0), prm.get("biaya_colo_pole", 20),
                 m(k.get("new_infra_m") or 0), prm.get("biaya_new_infra", 100)))
@@ -1461,7 +1933,7 @@ def _putuskan(h, prm):
         if k.get("naik_slack"):
             x0 = next((x for x in h["kandidat"] if x["lolos"] and x is not k and not x.get("tap_slack")), None)
             if x0 is not None and x0["kabel_baru_m"] < k["kabel_baru_m"]:
-                h["alasan"].append(T("Dipilih walau kabel barunya %s lebih panjang dari %s, karena titik sambung di "
+                h["alasan"].append(T("Dipilih meski kabel barunya %s lebih panjang daripada %s, karena menyambung di "
                                      "tengah kabel tanpa slack tidak bisa langsung dikerjakan.",
                                      "Chosen although its new cable is %s longer than %s, because a mid-cable tap "
                                      "without slack cannot be built directly.") % (
@@ -1469,95 +1941,116 @@ def _putuskan(h, prm):
         setara = [x for x in lolos[1:] if _setara(x, k)
                   and (x.get("feeder_int"), x.get("sumber")) != (k.get("feeder_int"), k.get("sumber"))]
         if setara:
-            h["peringatan"].append(T("Pilihan setara: %s juga memenuhi syarat dengan kabel baru hampir sama panjang "
-                                     "(%s). Dipakai %s karena %s; pilih yang lain di panel bila perencanaan cluster "
-                                     "menghendaki.",
-                                     "Equal alternative: %s also qualifies with almost the same new cable length (%s). "
-                                     "%s is used because %s; pick the other in the panel if the cluster plan says so.") % (
+            h["peringatan"].append(T("Ada pilihan yang hampir sama: %s juga bisa dipakai dengan kabel baru hampir sama "
+                                     "panjang (%s). Yang dipakai %s karena %s. Kalau rencana cluster lebih cocok dengan "
+                                     "yang lain, pilih saja di panel.",
+                                     "There is a near-equal option: %s also works with almost the same new cable "
+                                     "length (%s). %s is used because %s. If the cluster plan suits the other better, "
+                                     "just pick it in the panel.") % (
                 gabung(", ", [T("feeder %s", "feeder %s") % (x["nama"] or x["id"]) for x in setara[:3]]),
                 gabung(", ", [m(x["kabel_baru_m"]) for x in setara[:3]]), k["nama"] or k["id"],
                 _alasan_urut(k, setara[0])))
         if not k.get("tap_slack") and k["sumber"] == "COMPILE":
-            h["peringatan"].append(T("Perlu dicek: titik sambungnya tidak berada di slack, closure atau ujung kabel yang "
-                                     "sudah ada. Aturannya, slack baru tidak dibuat bila tidak tersedia, jadi pastikan di "
-                                     "lapangan ada cadangan kabel di titik ini, atau pilih kandidat lain di panel.",
-                                     "The tap point is not at an existing slack, closure or cable end. Rule: no new "
-                                     "slack is created where none exists, so confirm on site that there is spare "
-                                     "cable at this point, or choose another candidate in the panel."))
+            h["peringatan"].append(T("Titik sambungnya tidak di slack, closure atau ujung kabel yang sudah ada. Karena slack "
+                                     "baru tidak dibuat, pastikan di lapangan masih ada cadangan kabel di titik ini, atau "
+                                     "pilih opsi lain di panel.",
+                                     "The tap point is not at an existing slack, closure or cable end. Since no new "
+                                     "slack is made, check on site that there is spare cable at this point, or pick "
+                                     "another option in the panel."))
             h["batas"] = True
         if inf.get("tube") and k["sumber"] == "COMPILE":
-            h["peringatan"].append(T("Perlu dicek: tube T%d dipilih karena di compile belum tercatat dipakai. Belum "
-                                     "tercatat belum tentu kosong, jadi pastikan di OTB atau catatan tube sebelum dipakai.",
-                                     "Tube T%d is proposed because the compilation does not record it as used. A "
-                                     "missing record is not proof that the tube is free: confirm at the OTB or in the "
-                                     "tube record before using it.") % inf["tube"])
+            h["peringatan"].append(T("Tube T%d dipilih karena di compile belum tercatat terpakai. Belum tercatat belum tentu "
+                                     "kosong, jadi cek dulu di OTB atau catatan tube.",
+                                     "Tube T%d is proposed because the compilation does not show it as used. Not "
+                                     "recorded does not always mean free, so check at the OTB or in the tube record "
+                                     "first.") % inf["tube"])
     elif cek:
         h["keputusan"], h["terpilih"] = "COLO_CEK", cek[0]
-        h["alasan"].append(T("Feeder %s cocok arah dan jaraknya, tetapi sisa tube-nya tidak tercatat di data. Pastikan "
-                             "masih ada tube kosong sebelum dipakai.",
+        h["alasan"].append(T("Feeder %s cocok arah dan jaraknya, tapi sisa tube-nya tidak tercatat di data. Pastikan "
+                             "dulu masih ada tube kosong.",
                              "Feeder %s fits in direction and distance, but its free tubes are not recorded in the "
                              "data. Confirm there is a free tube before using it.") % (cek[0]["nama"] or cek[0]["id"]))
     elif fb:
         h["keputusan"] = "FEEDER_BARU"
         if not h["kandidat"]:
-            h["alasan"].append(T("Alasannya: tidak ada feeder dengan tube kosong dalam radius %s dari FDT.",
-                                 "Why: no feeder with a free tube within %s of the FDT.") % m(prm["radius_cari_m"]))
+            h["alasan"].append(T("Tidak ada feeder dengan tube kosong dalam radius %s dari FDT.",
+                                 "There is no feeder with a free tube within %s of the FDT.") % m(prm["radius_cari_m"]))
         else:
             k = h["kandidat"][0]
-            h["alasan"].append(T("Alasannya: feeder terdekat, %s, tidak bisa dipakai karena %s.",
-                                 "Why: the nearest feeder, %s, cannot be used because %s.") % (
+            h["alasan"].append(T("Feeder terdekat, %s, tidak bisa dipakai: %s.",
+                                 "The nearest feeder, %s, cannot be used: %s.") % (
                 k["nama"] or k["id"], gabung("; ", k["gagal"] or k["catatan"])))
-        h["alasan"].append(T("Susunannya: OTB 144 di POP, kabel 144 core sampai closure 144, lalu kabel %d core ke FDT. "
-                             "Pastikan slack 144-nya tidak di titik yang sama dengan slack feeder lain.",
+        core_fb = core_feeder_baru(h, prm)
+        h["alasan"].append(T("Susunannya OTB 144 di POP, kabel 144 core sampai closure 144, lalu kabel %d core ke FDT. "
+                             "Pastikan slack 144-nya tidak bertumpuk dengan slack feeder lain.",
                              "Layout: OTB 144 at the POP, a 144-fibre cable to the closure 144, then a %d-fibre cable to "
-                             "the FDT. Make sure its 144 slack is not at the same spot as another feeder's slack.") %
-                           int(prm["core_feeder_baru"]))
+                             "the FDT. Make sure its 144 slack is not at the same spot as another feeder's slack.") % core_fb)
+        if prm.get("feeder_baru_ikut_jarak", True):
+            h["alasan"].append(T("Kabelnya %d core karena jalur POP ke FDT %s (sampai %s cukup 48 core).",
+                                 "A %d-fibre cable because the POP-to-FDT route is %s (48-fibre limit %s).") % (
+                core_fb, km(fb.get("panjang_est_m") or fb.get("panjang_m") or 0),
+                km(float(prm["batas_48f_km"]) * 1000.0)))
     else:
-        h["alasan"].append(T("Tidak ada jalur ke POP maupun ke feeder yang ada di data ini: rancang FDT ini secara "
-                             "manual.", "No route to the POP or to an existing feeder in this data: design this FDT "
+        h["alasan"].append(T("Di data ini tidak ada jalur ke POP maupun ke feeder yang ada, jadi FDT ini perlu "
+                             "dirancang manual.", "No route to the POP or to an existing feeder in this data: design this FDT "
                              "by hand."))
     sel = h.get("terpilih")
     bud = (sel or {}).get("budget") or {}
     if sel and bud.get("margin_db") is not None and bud["margin_db"] < 0:
-        h["peringatan"].append(T("Redaman sinyal %s: masih di bawah batas kelas GPON %s dengan nilai komponen maksimum standar, "
-                                 "tetapi margin cadangan %s tidak utuh (sisa %s). Ukur redaman di lapangan setelah "
-                                 "penyambungan.",
+        h["peringatan"].append(T("Redaman %s masih di bawah batas GPON %s, tapi cadangan %s-nya sudah terpakai (tinggal "
+                                 "%s). Ukur redamannya di lapangan setelah penyambungan.",
                                  "Signal loss %s: within the GPON class limit %s with maximum standard component values, "
                                  "but the %s reserve margin is not complete (%s left). Measure the loss on site after "
                                  "splicing.") % (
             db(bud["total_db"] - prm["margin_db"]), db(prm["kelas_olt_db"]), db(prm["margin_db"]),
             db(prm["margin_db"] + bud["margin_db"])))
     elif sel and bud.get("margin_db") is not None and 0 <= bud["margin_db"] < MARGIN_TIPIS_DB:
-        h["peringatan"].append(T("Redaman sinyal hampir di batas (%s dari batas %s, sisa %s). Hitungan ini memakai nilai "
-                                 "standar, jadi ukur di lapangan atau pastikan kelas perangkat optiknya sebelum dibangun.",
+        h["peringatan"].append(T("Redaman sudah dekat batas (%s dari %s, sisa %s). Angka ini memakai nilai standar, jadi "
+                                 "sebaiknya diukur di lapangan atau cek dulu kelas perangkatnya.",
                                  "Signal loss is close to the limit (%s of %s, %s to spare). The figure uses standard "
                                  "values, so measure on site or confirm the optical class before building.") % (
             db(bud["total_db"]), db(prm["kelas_olt_db"]), db(bud["margin_db"])))
     rute = sel["rute"] if sel else (fb if h["keputusan"] == "FEEDER_BARU" else None)
     if rute and rute.get("bantu_m", 0) > 1:
-        h["peringatan"].append(T("%s jalur masih berupa garis bantu lurus (tidak ada data jalan atau kabel di bagian "
-                                 "itu): gambar ulang mengikuti tiang atau jalan.",
+        h["peringatan"].append(T("Masih ada %s garis bantu lurus karena di bagian itu tidak ada data jalan atau kabel. "
+                                 "Gambar ulang mengikuti tiang atau jalan.",
                                  "%s of the route is still a straight helper line (no road or cable data there): redraw "
                                  "it along poles or the road.") % m(rute["bantu_m"]))
 
 
-def pilih_manual(h, i, data):
-    """Desainer memilih kandidat ke-i (0-based) di panel: keputusan diganti, alasan dicatat, penomoran dihitung ulang."""
+def pilih_manual(h, i, data, prm=None):
+    """Desainer memilih kandidat ke-i (0-based) di panel atau menerima Saran Tembuku: keputusan diganti, alasan dicatat,
+    penomoran dan penjelasan dihitung ulang."""
     k = h["kandidat"][i]
     h["terpilih"] = k
     h["keputusan"] = "COLO" if k["lolos"] else "COLO_MANUAL"
-    h["alasan"] = [T("Pilihan desainer: feeder %s (%s), kabel baru %s.%s",
-                     "Designer's choice: feeder %s (%s), new cable %s.%s") % (
-        k["nama"] or k["id"], k["label_colo"], m(k["kabel_baru_m"]),
+    s = h.get("saran")
+    dari_saran = bool(s and s.get("kandidat") is k)
+    if s:
+        s["dipakai"] = dari_saran
+    awal = T("Memakai Saran Tembuku", "Using Tembuku's suggestion") if dari_saran else \
+        T("Pilihan desainer", "Designer's choice")
+    h["alasan"] = [T("%s: feeder %s (%s), kabel baru %s.%s", "%s: feeder %s (%s), new cable %s.%s") % (
+        awal, k["nama"] or k["id"], k["label_colo"], m(k["kabel_baru_m"]),
         "" if k["lolos"] else T(" Catatan Tembuku: %s.", " Tembuku's note: %s.") % gabung("; ", k["gagal"] + k["catatan"]))]
+    h["dipilih_desainer"] = "SARAN" if dari_saran else "MANUAL"
+    if dari_saran:
+        h["alasan"].append(s["alasan"])
     h["penomoran"] = penomoran(h, data)
+    from . import penjelasan as _pj
+    h["penjelasan"] = _pj.susun(h, prm or profil.baru())
     return h
 
 
-def pilih_feeder_baru(h, data):
+def pilih_feeder_baru(h, data, prm=None):
     h["terpilih"] = None
     h["keputusan"] = "FEEDER_BARU"
+    h["dipilih_desainer"] = "MANUAL"
+    if h.get("saran"):
+        h["saran"]["dipakai"] = False
     h["alasan"] = [T("Pilihan desainer: feeder baru dari %s (%s).", "Designer's choice: a new feeder from %s (%s).") % (
         h["pop"]["nama"] if h["pop"] else "POP", m(h["feeder_baru"]["panjang_m"] if h.get("feeder_baru") else 0))]
     h["penomoran"] = penomoran(h, data)
+    from . import penjelasan as _pj
+    h["penjelasan"] = _pj.susun(h, prm or profil.baru())
     return h

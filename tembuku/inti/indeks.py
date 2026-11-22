@@ -25,7 +25,8 @@ import xml.etree.ElementTree as ET  # nosec B405 - parses single <Placemark> fra
 
 from . import atribut, baca, kabel, kml_aman
 
-SKEMA = 7                   # 7: atribut dikenali dari makna (sinonim kolom, tabel keterangan); format non-KML
+SKEMA = 8                   # 7: atribut dikenali dari makna (sinonim kolom, tabel keterangan); format non-KML
+                            # 8: kolom DESCR2 (folder 'Informasi Route Existing', arahan 18-11-2026)
 POTONG = 64                 # points per stored line chunk (R*Tree granularity)
 SKALA = 1e7                 # coordinates stored as integers of 1e-7 degree (~1 cm)
 SEL = 0.5                   # area cell size (degrees)
@@ -83,7 +84,7 @@ class IndeksKabel(object):
             "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;"
             "CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT);"
             "CREATE TABLE IF NOT EXISTS atr(id INTEGER PRIMARY KEY, nama TEXT, model TEXT, owner TEXT, product TEXT,"
-            " status TEXT, spare REAL, core INTEGER, cpt INTEGER, kota TEXT, grup TEXT);"
+            " status TEXT, spare REAL, core INTEGER, cpt INTEGER, kota TEXT, grup TEXT, descr2 TEXT);"
             "CREATE TABLE IF NOT EXISTS kabel(id INTEGER PRIMARY KEY, atr INTEGER, geom BLOB);"
             "CREATE TABLE IF NOT EXISTS sel(cx INTEGER, cy INTEGER, PRIMARY KEY(cx, cy));"
             "CREATE VIRTUAL TABLE IF NOT EXISTS idx USING rtree(id, x0, x1, y0, y1);")
@@ -321,7 +322,7 @@ class IndeksKabel(object):
 
     def _simpan(self, ar, rows, rt):
         if ar:
-            self.con.executemany("INSERT INTO atr VALUES (?,?,?,?,?,?,?,?,?,?,?)", ar)
+            self.con.executemany("INSERT INTO atr VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", ar)
         if rows:
             self.con.executemany("INSERT INTO kabel VALUES (?,?,?)", rows)
             self.con.executemany("INSERT INTO idx VALUES (?,?,?,?,?)", rt)
@@ -370,13 +371,16 @@ class IndeksKabel(object):
             c2 = atribut.core_dari(a, nm)
             if c2:
                 core, cpt = c2, 12 if c2 >= 12 else c2
+        d2 = str(atribut.nilai(a, "descr2") or "").strip()
+        if d2.upper() in ("NULL", "NONE", "-"):
+            d2 = ""
         return (nm, model, atribut.nilai(a, "owner") or "", atribut.nilai(a, "produk") or "",
-                atribut.nilai(a, "status") or "", atribut.spare_dari(a), core, cpt, atribut.nilai(a, "grup") or "", "")
+                atribut.nilai(a, "status") or "", atribut.spare_dari(a), core, cpt, atribut.nilai(a, "grup") or "", "", d2)
 
     def di_bbox(self, bb):
         """bb=(minlon,minlat,maxlon,maxlat) -> list of cable dicts (consecutive chunks of one cable re-joined)."""
         q = ("SELECT a.id, a.nama, a.model, a.owner, a.product, a.status, a.spare, a.core, a.cpt, a.kota, a.grup, "
-             "k.geom, k.id FROM idx i JOIN kabel k ON k.id = i.id JOIN atr a ON a.id = k.atr "
+             "k.geom, k.id, a.descr2 FROM idx i JOIN kabel k ON k.id = i.id JOIN atr a ON a.id = k.atr "
              "WHERE i.x1 >= ? AND i.x0 <= ? AND i.y1 >= ? AND i.y0 <= ? ORDER BY k.id")
         per = {}
         for r in self.con.execute(q, (bb[0], bb[2], bb[1], bb[3])):
@@ -389,7 +393,8 @@ class IndeksKabel(object):
             key = r[0] if d is None else "%s_%d" % (r[0], r[12])
             per[key] = {"id": "B%s" % key, "nama": r[1] or "", "model": r[2] or "", "owner": r[3] or "",
                         "product": r[4] or "", "status": r[5] or "", "spare": r[6], "core": r[7], "cpt": r[8],
-                        "kota": r[9] or "", "grup": r[10] or "", "ll": ll, "sumber": "NASIONAL", "_akhir": r[12]}
+                        "kota": r[9] or "", "grup": r[10] or "", "descr2": r[13] or "", "ll": ll, "sumber": "NASIONAL",
+                        "_akhir": r[12]}
         out = list(per.values())
         for d in out:
             d.pop("_akhir", None)

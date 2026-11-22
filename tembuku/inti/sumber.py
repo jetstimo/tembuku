@@ -372,6 +372,8 @@ def baca_compile(path, temuan=None):
         if any(str(f).strip().upper() == "DROP" for f in pm["path"]):      # aturan: folder bernama Drop diabaikan
             n_drop += 1
             continue
+        if any(str(f).strip().upper() == "INFORMASI ROUTE EXISTING" for f in pm["path"]):
+            continue        # hanya keterangan kabel existing yang dilalui (NAME/DESCR2), bukan kabel atau tiang desain
         p = [V.kanon_folder(f, temuan, base) for f in pm["path"]]
         info = [(j, V.baca_traksi(f, temuan, base)) for j, f in enumerate(p)]
         info = [(j, t) for j, t in info if t]
@@ -546,8 +548,9 @@ def baca_target(path, temuan=None):
                 clus, area = m.group(1), m.group(2).strip()
                 mt = RX_TGL.search(f)
                 tgl = mt.group(1) if mt else None
-        if not clus:                       # nama berkas '<ID cluster>_<nama area>.kmz' (tanpa kata APD)
-            m = re.match(r"^(\d{9,12})_(.+?)(?:_\d{2}-\d{2}-\d{4})?\.[A-Za-z]{3,7}$", base)
+        if not clus:                       # nama berkas '<ID cluster>_<nama area>.kmz' (tanpa kata APD); pemisah boleh
+            # spasi atau tanda hubung juga ('21100232553 RT 023 RAJAWALI.kmz', Jambi 18-11-2026)
+            m = re.match(r"^(\d{9,12})\s*[_\s-]\s*(.+?)(?:[_\s]+\d{2}-\d{2}-\d{4})?\.[A-Za-z]{3,7}$", base)
             if m:
                 clus, area = m.group(1), m.group(2).strip()
         rec.update({"_lat": atribut.nilai(pm["attrs"], "lat"), "_lon": atribut.nilai(pm["attrs"], "lon"),

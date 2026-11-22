@@ -40,27 +40,46 @@ TEMPLATE_FEEDER = (
     "Keterangan Infra/New Cable Galian") + tuple("Keterangan Infra/New Cable Galian/New Cable %dC UG" % c for c in CORE) + (
     "Keterangan Infra/Collo Tiang",) + tuple("Keterangan Infra/Collo Tiang/Colo Pole %dC" % c for c in CORE)
 FOLDER_NEW_INFRA = "Keterangan Infra/New Infra"     # di luar template, tetapi dipakai desainer (19 dari 46 traksi)
+FOLDER_ROUTE_EXISTING = "Informasi Route Existing"  # arahan 18-11-2026: kabel existing yang dilalui (NAME, DESCR2)
 # Ikon milik pengguna (opsional, dari folder 'ikon'; tidak ikut di plugin). Dikenali dari kata di nama berkasnya, apa pun
 # imbuhannya, lalu ditanam ke KMZ dengan nama netral: jenis -> (pola nama berkas, nama di KMZ, skala template).
-IKON_LOKAL = {"fdt": (r"^FDT\b", "fdt_lokal.png", 0.5), "pop": (r"^OLT\b|^POP\b", "olt_lokal.png", 1.2),
-              "closure": (r"^(CLOSURE|CL)[ _-]*96\b", "closure_96_lokal.png", 0.8),
-              "closure_kecil": (r"^(CLOSURE|CL)[ _-]*48\b", "closure_48_lokal.png", 0.8),
-              "closure_288": (r"^(CLOSURE|CL)[ _-]*288\b", "closure_288_lokal.png", 0.8),
-              "otb": (r"^OTB\b", "otb_lokal.png", 0.8), "slack": (r"^(SPARE|SLACK)\b", "slack_lokal.png", 0.8),
-              "tiang6": (r"^6M\b", "tiang6_lokal.png", 0.5),
-              # template APD: New Tiang 9m = ICONFTTH-9m.png; pola dicoba berurutan (yang pertama cocok dipakai)
-              "tiang7": ((r"^ICONFTTH[ -]*7M\b", r"^7M\b", r"^POLE 7\b"), "tiang7_lokal.png", 0.5),
-              "tiang9": ((r"^ICONFTTH[ -]*9M\b", r"^9M\b", r"^POLE 9\b"), "tiang9_lokal.png", 0.5)}
+# Pola dicoba berurutan, dari nama persis set ikon tim (ICON_FTTH: 'FDT.png', 'Closure 96.png', 'CL_144.png',
+# 'OTB_144.png', 'OLT.png', 'Spare Cable.png', 'ICONFTTH-7M.png', ...) ke pola umum; varian lain ('FDT Ground', 'FDT ioh',
+# 'Pole 7m Ex') tidak dipakai untuk objek baru. Tiang template APD: New Tiang 7/9 m = ICONFTTH-7M/9m.
+# FDT: desain nyata desainer memakai gambar 'FDT ioh' (compile Jambi & Gresik, isi berkas identik dengan set ICON_FTTH),
+# jadi 'FDT ioh' didahulukan; 'FDT' biasa hanya bila 'FDT ioh' tidak ada.
+_TANPA_VARIAN = r"(?!.*\b(GROUND|IOH|EX|EKS|EXISTING|EKSISTING)\b)"
+IKON_LOKAL = {"fdt": ((r"^FDT IOH$", r"^FDT IOH\b", r"^FDT$", r"^FDT\b" + _TANPA_VARIAN, r"^FDT\b"), "fdt_lokal.png", 0.5),
+              "pop": ((r"^OLT$", r"^OLT\b" + _TANPA_VARIAN, r"^POP\b"), "olt_lokal.png", 1.2),
+              "closure": ((r"^(CLOSURE|CL) ?96$", r"^(CLOSURE|CL) ?96\b"), "closure_96_lokal.png", 0.8),
+              "closure_kecil": ((r"^(CLOSURE|CL) ?48$", r"^(CLOSURE|CL) ?48\b"), "closure_48_lokal.png", 0.8),
+              "closure_144": ((r"^(CLOSURE|CL) ?144$", r"^(CLOSURE|CL) ?144\b"), "closure_144_lokal.png", 0.8),
+              "closure_288": ((r"^(CLOSURE|CL) ?288$", r"^(CLOSURE|CL) ?288\b"), "closure_288_lokal.png", 0.8),
+              "otb": ((r"^OTB ?144$", r"^OTB\b" + _TANPA_VARIAN), "otb_lokal.png", 0.8),
+              "slack": ((r"^SPARE CABLE$", r"^(SPARE|SLACK)\b"), "slack_lokal.png", 0.8),
+              "tiang6": ((r"^6M$", r"^ICONFTTH ?6M$", r"^6M\b", r"^POLE 6\b" + _TANPA_VARIAN), "tiang6_lokal.png", 0.5),
+              "tiang7": ((r"^ICONFTTH ?7M$", r"^ICONFTTH ?7M\b", r"^7M$", r"^7M\b", r"^POLE 7\b" + _TANPA_VARIAN),
+                         "tiang7_lokal.png", 0.5),
+              "tiang9": ((r"^ICONFTTH ?9M$", r"^ICONFTTH ?9M\b", r"^9M$", r"^9M\b", r"^POLE 9\b" + _TANPA_VARIAN),
+                         "tiang9_lokal.png", 0.5)}
+
+
+def _nama_ikon(n):
+    """'ICONFTTH-7M.png' -> 'ICONFTTH 7M'; 'OTB_144.png' -> 'OTB 144' (huruf besar, pemisah jadi satu spasi)."""
+    import re
+    return re.sub(r"[\s_-]+", " ", os.path.splitext(os.path.basename(n))[0].upper()).strip()
 
 
 def pilih_ikon(lokal):
-    """{nama berkas: bytes} -> {jenis: (nama netral di KMZ, skala, bytes)} untuk ikon pengguna yang dikenali."""
+    """{nama berkas: bytes} -> {jenis: (nama berkas di KMZ, skala, bytes)} untuk ikon pengguna yang dikenali.
+    Urutan sumber dihormati (folder ikon Tembuku lebih dulu, lalu folder ikon di sekitar data), jadi pilihan ikon
+    sama di setiap wilayah/cluster; di dalam satu sumber nama berkas diurutkan."""
     import re
     out = {}
+    nama_urut = list(lokal or {})
     for jenis, (pola, netral, skala) in IKON_LOKAL.items():
         for p in (pola if isinstance(pola, tuple) else (pola,)):
-            nama = next((n for n in sorted(lokal or {}) if re.search(p, os.path.splitext(n)[0].upper().replace("_", " "))),
-                        None)
+            nama = next((n for n in nama_urut if re.search(p, _nama_ikon(n))), None)
             if nama:
                 # nama berkas ikon asli pengguna dipakai di KMZ (seperti hasil desainer: files/Closure 96.png)
                 asli = re.sub(r"[^\w .()-]", "_", os.path.basename(nama)) or netral
@@ -71,7 +90,7 @@ def pilih_ikon(lokal):
 
 SKALA = {"fdt": 0.5, "pop": 1.2, "closure": 0.8, "otb": 0.8, "slack": 0.8, "tap": 1.1, "tiang": 0.5}
 WARNA_INFRA = {"TIANG_NASIONAL": "b3ffff00", "TIANG_COMPILE": "b3ffaa55", "NEW_INFRA": "b300ff55",
-               "GARIS_BANTU": "ff0000ff", "COLO_CABLE": "b37fffff"}
+               "GARIS_BANTU": "ff0000ff", "COLO_CABLE": "b37fffff", "ROUTE_EXISTING": "ff0080ff"}
 IKON = {k: "files/%s.png" % k for k in ikon.BENTUK}
 WARNA_IKON = {"slack": "ff00ffff", "closure": "ff00aaff", "otb": "ffff8800", "fdt": "ff00ffff",
               "pop": "ff0000ff", "tap": "ffff00ff", "tiang": "ff00ff55"}
@@ -98,16 +117,17 @@ class _W(object):
         self.ikon_pakai = {}
 
     def ik(self, jenis, core=None, eks=False):
-        """Style ikon seperti di compile desainer: hanger 'forbidden', OLT 'ranger_station'; closure/FDT/OTB/tiang memakai
-        ikon organisasi bila ada (closure mengikuti kapasitas seperti template), selain itu ikon bawaan Tembuku.
+        """Style ikon: semua simbol dari set ikon tim (ICON_FTTH) bila tersedia - slack/hanger 'Spare Cable', OLT 'OLT',
+        closure/FDT/OTB/tiang sesuai kapasitas; ikon template Google ('forbidden', OLT) hanya bila set tim tidak ada.
         eks=True: varian objek eksisting (warna ikon seperti di compile)."""
-        if jenis in ("slack", "hanger"):
-            return "apd_hanger"
-        if jenis == "pop":
-            return "apd_olt"
+        if jenis in ("slack", "hanger"):    # arahan pengguna 19-11-2026: ikon hanya dari set tim -> 'Spare Cable'
+            return self.lokal.get("slack", "apd_hanger")
+        if jenis == "pop":                  # OLT: ikon tim 'OLT', selain itu ikon template
+            return self.lokal.get("pop", "apd_olt")
         st = None
-        if jenis == "closure" and core:      # template: 12-48 'Closure 48', 96-144 'Closure 96', 288 'CL_288'
-            j = "closure_288" if core >= 288 else ("closure_kecil" if core <= 48 else "closure")
+        if jenis == "closure" and core:      # 12-48 'Closure 48', 96 'Closure 96', 144 'CL_144' (bila ada), 288 'CL_288'
+            j = "closure_288" if core >= 288 else ("closure_144" if core >= 144 and "closure_144" in self.lokal else
+                                                   ("closure_kecil" if core <= 48 else "closure"))
             st = self.lokal.get(j)
         if st is None and jenis.startswith("tiang"):
             st = self.lokal.get(jenis, "ikon_tiang")
@@ -144,8 +164,9 @@ class _W(object):
                                  _c_persis(p) if persis else _c([p])))
 
 
-PIN = ('<IconStyle><scale>1.1</scale><Icon><href>http://maps.google.com/mapfiles/kml/pushpin/ylw-pushpin.png</href>'
-       '</Icon><hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/></IconStyle>')   # gaya garis seperti hasil desainer
+# Gaya garis tanpa ikon pushpin Google (arahan pengguna 19-11-2026: semua simbol hanya dari set ikon tim). Ikon pada gaya
+# garis tidak tampil di peta, jadi tampilan garis tidak berubah.
+PIN = ""
 
 
 def _styles(w, lokal=None):
@@ -155,7 +176,7 @@ def _styles(w, lokal=None):
             % (c, PIN, col, LEBAR_KABEL))
     for nm, col in WARNA_INFRA.items():
         w.a('<Style id="infra_%s">%s<LineStyle><color>%s</color><width>%d</width></LineStyle></Style>'
-            % (nm, PIN, col, 3 if nm == "GARIS_BANTU" else 10))
+            % (nm, PIN, col, 3 if nm == "GARIS_BANTU" else (4 if nm == "ROUTE_EXISTING" else 10)))
     w.a('<Style id="kandidat"><LineStyle><color>9900a5ff</color><width>6</width></LineStyle></Style>')
     w.a('<Style id="kandidat_tolak"><LineStyle><color>66888888</color><width>3</width></LineStyle></Style>')
     for k, href in IKON.items():
@@ -299,6 +320,40 @@ def _bersihkan_ll(ll):
     r = _lengkung(rapikan_garis(xy))
     out = [(q[0] / (111320.0 * k), q[1] / 110574.0) for q in r]
     out[0], out[-1] = ll[0], ll[-1]
+    return out
+
+
+def _potong_fraksi(ll, rute):
+    """Garis lon/lat dipotong menurut [{label, s0, s1}] (posisi 0..1 di sepanjang garis) -> [(label, potongan)].
+    Potongan bersambung ujung ke ujung (tanpa celah); [] bila tidak ada pembagian yang sah."""
+    if not rute or not ll or len(ll) < 2:
+        return []
+    cum = [0.0]
+    for a, b in zip(ll, ll[1:]):
+        cum.append(cum[-1] + geo.haversine(a, b))
+    total = cum[-1]
+    if total <= 0:
+        return []
+
+    def titik(s):
+        for i in range(len(ll) - 1):
+            if cum[i] <= s <= cum[i + 1]:
+                d = cum[i + 1] - cum[i]
+                t = 0.0 if d <= 0 else (s - cum[i]) / d
+                return (ll[i][0] + t * (ll[i + 1][0] - ll[i][0]), ll[i][1] + t * (ll[i + 1][1] - ll[i][1])), i
+        return ll[-1], len(ll) - 2
+    out = []
+    for j, r in enumerate(rute):
+        s0 = 0.0 if j == 0 else float(r["s0"]) * total
+        s1 = total if j == len(rute) - 1 else float(r["s1"]) * total
+        if s1 - s0 < 1.0:
+            continue
+        p0, i0 = titik(s0)
+        p1, i1 = titik(s1)
+        pot = [p0] + [ll[k] for k in range(i0 + 1, i1 + 1)] + [p1]
+        pot = [p for n, p in enumerate(pot) if n == 0 or p != pot[n - 1]]
+        if len(pot) >= 2:
+            out.append((r["label"], pot))
     return out
 
 
@@ -528,7 +583,7 @@ def _isi_traksi(w, h, prm, ke_ll):
     sel = h.get("terpilih")
     baru = h["keputusan"] == "FEEDER_BARU"
     rute = sel["rute"] if sel else (h["feeder_baru"] if baru else None)
-    core_cab = int(prm["core_feeder_baru"] if baru else ((sel or {}).get("core_cabang") or prm["core_cabang"]))
+    core_cab = int(mesin.core_feeder_baru(h, prm) if baru else ((sel or {}).get("core_cabang") or prm["core_cabang"]))
     ts = (sel or {}).get("tap_slack")
     try:        # closure di titik sambung: sebesar kabel yang disambung, kecuali diatur angka tetap
         core_tap = _core_bulat(int(prm["closure_tap"]))
@@ -629,11 +684,18 @@ def _isi_traksi(w, h, prm, ke_ll):
         w.folder("New Cable Aerial/Udara", udara)
 
         def colo():
-            # nama 'COLO CABLE', keterangan = nama traksi feeder yang dipakai (seperti hasil desainer)
+            # nama 'COLO CABLE'; keterangan = rute kabel feeder yang dilalui (arahan atasan 18-11-2026), mis.
+            # 'Colo Cable F6 Feeder Perumahan karlia asri'; melewati beberapa cluster -> satu garis per cluster sesuai
+            # urutan rute dari POP
             if sel and sel.get("colo_xy"):
-                tr = re.sub(r"\.km[lz]$", "", str(sel.get("traksi") or sel.get("nama") or ""), flags=re.I)
-                w.garis("COLO CABLE", colo_final or [ke_ll(p) for p in rapikan_garis(sel["colo_xy"])],
-                        "infra_COLO_CABLE", tr, final=bool(colo_final))
+                garis_colo = colo_final or [ke_ll(p) for p in rapikan_garis(sel["colo_xy"])]
+                potong = _potong_fraksi(garis_colo, sel.get("colo_route") or [])
+                if potong:
+                    for label, ll in potong:
+                        w.garis("COLO CABLE", ll, "infra_COLO_CABLE", label, final=True)
+                else:
+                    tr = re.sub(r"\.km[lz]$", "", str(sel.get("traksi") or sel.get("nama") or ""), flags=re.I)
+                    w.garis("COLO CABLE", garis_colo, "infra_COLO_CABLE", tr, final=bool(colo_final))
         w.folder("Collo Cable", colo)
         w.folder("UG Utilities", lambda: (w.folder("Manhole", lambda: None), w.folder("Handhole", lambda: None)))
     w.folder("Cable", cable)
@@ -665,7 +727,7 @@ def _isi_traksi(w, h, prm, ke_ll):
                     # hanger yang berdempetan dengan slack di titik sambung atau di FDT tidak ditulis dua kali
                     if any(u and geo.haversine(q, u) < 20.0 for u in (tap_ll, f["ll"])):
                         continue
-                    w.titik("Slack", _ke_kabel(q, semua_final), w.ik("slack"),
+                    w.titik("Slack", _ke_kabel(q, semua_final), w.ik("hanger"),
                             "Hanger di sekitar %d m dari awal kabel baru" % jarak)
             w.titik("Slack", f["ll"], w.ik("slack"), "Slack %d m di FDT" % prm["slack_m"])
         w.folder("New Hanger", nh)
@@ -767,6 +829,13 @@ def _isi_traksi(w, h, prm, ke_ll):
             w.folder("New Infra", lambda: [w.garis("New Infra", ll if baru else arah(ll), "infra_NEW_INFRA", final=True)
                                            for ll in (gab if baru else list(reversed(gab)))])
     w.folder("Keterangan Infra", ket)
+
+    # arahan 18-11-2026: kabel existing (inventaris) yang dilalui rute, dengan NAME dan DESCR2 di tabel balonnya
+    info = (sel or {}).get("route_existing") if sel else ((h.get("feeder_baru") or {}).get("route_existing") if baru else None)
+    w.folder(FOLDER_ROUTE_EXISTING, lambda: [
+        w.garis(d["nama"], d["ll"], "infra_ROUTE_EXISTING", data={"NAME": d["nama"], "DESCR2": d["descr2"]},
+                final=True)     # titiknya sudah dari garis rute yang digambar (bersih); tidak dipangkas lagi
+        for d in (info or []) if h["keputusan"] != "PERLU_MANUAL" and len(d.get("ll") or []) >= 2])
     return bantu, [ll for kelas, _c, ll, _r in infra if kelas == "NEW_INFRA"], tiang
 
 
@@ -819,6 +888,8 @@ def periksa_template(path):
         masalah.append("tidak ada folder Feeder di dalam folder traksi")
     for t, ada in traksi.items():
         inti = list(ada)
+        if inti[-1:] == [FOLDER_ROUTE_EXISTING]:  # folder keterangan arahan 18-11-2026, selalu paling akhir
+            inti = inti[:-1]
         if inti[-1:] == [FOLDER_NEW_INFRA]:      # tambahan yang juga dipakai desainer, hanya bila ada ruas New Infra
             inti = inti[:-1]
         if tuple(inti) != TEMPLATE_FEEDER:

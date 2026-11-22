@@ -16,8 +16,23 @@ BAWAAN = {
                          "compile adalah nomor tube ini; FDT ke-1..8 sebuah feeder memakai tube ini lewat kabel 96F"),
     "tube_kelompok_48": ("9-12", "KEBIJAKAN", "Nomor tube kabel induk 144F yang dicabangkan lewat kabel 48F dari closure 144 di POP (T9-T12). "
                          "Satu FDT = satu tube; dipilih nomor terkecil yang masih kosong"),
-    "batas_48f_km": (6.0, "KEBIJAKAN", "Jarak POP->FDT lewat jalur aktual paling jauh untuk cabang 48F; lebih jauh dari ini harus lewat kabel "
-                     "96F (kelompok T1-T8)"),
+    "batas_48f_km": (4.0, "KEBIJAKAN", "Arahan atasan 18-11-2026: jalur POP->FDT (jalur aktual) sampai batas ini memakai kabel "
+                     "48 core (cabang 48F, T9-T12), lebih jauh memakai kabel 96 core (96F, T1-T8). Berlaku untuk kelompok "
+                     "tube dan ukuran kabel baru ke FDT, juga kabel distribusi feeder baru. Dapat diubah (dulu 6 km)"),
+    "tolak_jalur_memutar": (False, "KEBIJAKAN", "Arahan atasan 18-11-2026: bila ada feeder existing dengan tube kosong, FDT "
+                            "baru masuk ke feeder itu. Bawaan Tidak: panjang jalur lewat feeder dibanding feeder baru "
+                            "(rasio_jalur_maks) hanya dicatat, tidak menolak; kandidat yang jalurnya dalam batas tetap "
+                            "didahulukan, yang memutar dipakai hanya sebagai ganti feeder baru. Ya = aturan versi 1.4.x "
+                            "(ditolak bila lebih dari rasio_jalur_maks)"),
+    "feeder_baru_ikut_jarak": (True, "KEBIJAKAN", "Arahan atasan 18-11-2026: kabel distribusi feeder baru (setelah closure "
+                               "144) 48 core bila jalur POP->FDT sampai batas_48f_km, 96 core bila lebih. Tidak = selalu "
+                               "core_feeder_baru"),
+    "proyek_satu_feeder": (True, "KEBIJAKAN", "Arahan atasan 18-11-2026 (kasus Rajawali): FDT dalam satu berkas proyek "
+                           "dirancang bersama. Feeder existing hanya dipakai bila tube kosongnya cukup untuk semua FDT "
+                           "proyek itu, dan FDT berikutnya ikut feeder FDT pertama, jadi satu cluster tidak dipecah ke "
+                           "feeder penuh dan feeder baru"),
+    "proyek_jarak_maks_m": (2000, "KEBIJAKAN", "FDT dalam satu berkas yang berjauhan lebih dari ini dianggap proyek "
+                            "terpisah"),
     "pola_slack_144": (True, "KEBIJAKAN", "Feeder baru: panjang kabel 144F mengikuti pola slack ujung per nomor feeder (F01 100-250 m, "
                        "F02 150-300 m, bergeser 50 m per feeder; dipakai titik tengah, paling panjang 750 m). Tidak = pakai stub_144_m"),
     "maks_144_m": (750, "KEBIJAKAN", "Panjang maksimum kabel 144F dari POP"),
@@ -28,19 +43,20 @@ BAWAAN = {
                     "ruas tiang baru dengan garis New Infra, jadi titik tiang bisa terhitung dua kali di aplikasi BOM. "
                     "Perkiraan tiang tetap ada di keterangan garis New Infra dan di KMZ analisis"),
     "tiang_m": (50, "KEBIJAKAN", "Jarak antar tiang baru di ruas New Infra"),
-    "utamakan_aturan_6km": (False, "DATA", "PDF 3.1 + 3.2 (Ya = ikuti PDF apa adanya): kandidat dengan kelompok tube sesuai jarak 6 km "
+    "utamakan_aturan_6km": (False, "DATA", "PDF 3.1 + 3.2 (Ya = ikuti PDF apa adanya): kandidat dengan kelompok tube sesuai batas jarak "
+                            "48/96 (batas_48f_km) "
                             "didahulukan. Bawaan Tidak: redaman ditentukan panjang jalur, bukan jumlah serat (ITU-T G.652/G.984.2), "
                             "dan uji 213 desain 4 kota: folder F/T sama 54 % bila Tidak vs 36 % bila Ya, kabel baru 421 vs 563 km. "
-                            "Larangan cabang 48F lebih dari 6 km (batas_48f_km) tetap berlaku"),
+                            "Larangan cabang 48F lebih jauh dari batas_48f_km tetap berlaku"),
     "biaya_colo_cable": (1.0, "KEBIJAKAN", "Evaluasi atasan 16-11-2026: biaya relatif per meter menumpang kabel feeder yang ada "
                          "(colo cable) = 1"),
     "biaya_colo_pole": (20.0, "KEBIJAKAN", "Evaluasi atasan 16-11-2026: kabel baru di tiang yang sudah ada (colo pole) = 20 kali "
                         "colo cable per meter"),
     "biaya_new_infra": (100.0, "KEBIJAKAN", "Evaluasi atasan 16-11-2026: kabel baru dengan tiang baru (new infra) = 5 kali colo "
                         "pole = 100 kali colo cable per meter. Kandidat yang lolos diurutkan dari biaya termurah"),
-    "kabel_dari_sisa_tube": (True, "KEBIJAKAN", "Arahan finalisasi: ukuran kabel baru dari feeder ke FDT mengikuti sisa tube "
-                             "kosong. Menumpang jalur 96F (T1-T8): sisa <= batas_tube_kabel_48 tube -> kabel 48, lebih -> "
-                             "kabel 96. Jalur 48F (T9-T12) -> kabel 48"),
+    "kabel_dari_sisa_tube": (False, "KEBIJAKAN", "Aturan lama (diganti arahan jarak 18-11-2026): ukuran kabel baru dari feeder "
+                             "ke FDT mengikuti sisa tube kosong. Menumpang jalur 96F (T1-T8): sisa <= batas_tube_kabel_48 "
+                             "tube -> kabel 48, lebih -> kabel 96. Bawaan Tidak: ukuran kabel dari jarak (batas_48f_km)"),
     "batas_tube_kabel_48": (4, "KEBIJAKAN", "Sisa tube kosong paling banyak untuk kabel 48 (lebih dari ini kabel 96)"),
     "arah_utara_selatan": (True, "KEBIJAKAN", "Arahan finalisasi: FDT di utara POP hanya memakai feeder yang keluar ke arah "
                            "utara dari POP, FDT di selatan hanya feeder ke arah selatan (dan sebaliknya tidak boleh)"),
@@ -92,7 +108,8 @@ BAWAAN = {
                       "(cabang 48F baru dari closure 144 di POP bisa sepanjang jalur POP->FDT; desain nyata Bengkulu 3,7 km)"),
     "rasio_jalur_maks": (1.24, "DATA", "Searah ke FDT: panjang serat bila menumpang feeder yang ada (POP->titik sambung->FDT) <= 1,24 x feeder baru "
                          "langsung dari POP. Dikalibrasi pada 17 traksi riil Bitung & Tomohon (menumpang <= 1,23; feeder baru "
-                         ">= 1,25); keputusan dalam +-0,05 dari ambang ditandai BATAS untuk ditinjau"),
+                         ">= 1,25); keputusan dalam +-0,05 dari ambang ditandai BATAS untuk ditinjau. Sejak 1.5.0 hanya "
+                         "menolak bila tolak_jalur_memutar = Ya"),
     "zona_batas": (0.05, "KEBIJAKAN", "Hasil yang selisihnya kurang dari 0,05 dari batas panjang jalur ditandai 'perlu ditinjau'"),
     "faktor_tiang_eksisting": (0.2, "KEBIJAKAN", "Bobot jalur per meter menumpang tiang yang sudah ada dibanding jalan (tiang baru = 1): "
                                "colo pole 20 / new infra 100 = 0,2 (evaluasi atasan 16-11-2026)"),
@@ -210,7 +227,11 @@ LABEL_ID = {
     "pola_slack_144": "Panjang 144F mengikuti pola slack per feeder", "maks_144_m": "Panjang maksimum kabel 144F (m)",
     "closure_lubang_maks": "Lubang kabel per closure", "tulis_tiang": "Tulis tiang baru di New Infra",
     "tiang_m": "Jarak antar tiang baru (m)",
-    "batas_48f_km": "Jarak POP-FDT terjauh untuk cabang 48F (km)", "utamakan_aturan_6km": "Dahulukan kelompok tube sesuai aturan 6 km",
+    "batas_48f_km": "Batas jarak kabel 48 core (km; lebih jauh 96 core)",
+    "utamakan_aturan_6km": "Dahulukan kelompok tube sesuai aturan jarak 48/96",
+    "tolak_jalur_memutar": "Tolak feeder bila jalurnya jauh lebih panjang dari feeder baru",
+    "feeder_baru_ikut_jarak": "Kabel feeder baru 48/96 core mengikuti jarak",
+    "proyek_satu_feeder": "FDT satu proyek dirancang bersama", "proyek_jarak_maks_m": "Jarak maksimum FDT satu proyek (m)",
     "toleransi_slack_antar_m": "Toleransi mendahulukan titik sambung di slack/ujung kabel existing (m)",
     "slack_min_kabel_m": "Prioritas slack mulai dari panjang kabel baru (m)",
     "kelas_jalan_hindari": "Kelas jalan yang dihindari", "kelas_seberang": "Kelas jalan untuk tiang 9 m penyeberangan", "koridor_min": "Bagian jalur minimum di koridor feeder sendiri",
@@ -243,9 +264,24 @@ LABEL_ID = {
 JENIS_ID = {"PDF": "Aturan engineering (PDF 11-11-2026)", "STANDAR": "Standar", "DATA": "Dari desain nyata", "KEBIJAKAN": "Kebijakan", "KEBIJAKAN+DATA": "Kebijakan dan desain nyata"}
 
 PENJELASAN_EN = {
-    "kabel_dari_sisa_tube": ("Branch cable size from free tubes", "On (default): the new cable from the feeder to the "
+    "kabel_dari_sisa_tube": ("Branch cable size from free tubes (old rule)", "Off (default): the cable size follows the "
+                             "route length (see the 48/96-fibre distance limit). On: the new cable from the feeder to the "
                              "FDT is 48 fibres when the 96F tube group (T1-T8) it uses has at most the set number of free "
                              "tubes left, otherwise 96 fibres; a 48F (T9-T12) branch always gets 48 fibres."),
+    "tolak_jalur_memutar": ("Reject a feeder whose route is much longer than a new feeder", "Off (default, reviewer rule "
+                            "of 18 Nov 2026): an existing feeder that still has a free tube is used; a long route is only "
+                            "noted. On: the rule of versions 1.4.x, the feeder is rejected when its route is over the "
+                            "route limit times a new feeder."),
+    "feeder_baru_ikut_jarak": ("New feeder cable 48/96 fibres by distance", "On (default): after the closure 144, a new "
+                               "feeder continues with a 48-fibre cable when the POP-to-FDT route is within the 48/96-fibre "
+                               "distance limit, and a 96-fibre cable when it is longer. Off: always the new feeder cable "
+                               "size."),
+    "proyek_satu_feeder": ("Design the FDTs of one project together", "On (default): the FDTs in one project file are "
+                           "designed together. An existing feeder is used only if it has enough free tubes for all of "
+                           "them, and the next FDTs follow the feeder of the first, so one cluster is not split between "
+                           "a full feeder and a new feeder."),
+    "proyek_jarak_maks_m": ("Furthest FDT of one project (m)", "FDTs in one file that are further apart than this are "
+                            "treated as separate projects."),
     "batas_tube_kabel_48": ("Free tubes for a 48-fibre cable", "Largest number of free tubes for which the new cable is "
                             "48 fibres; with more free tubes it is 96 fibres."),
     "arah_utara_selatan": ("Feeder north/south as the FDT", "On (default): an FDT north of the POP only uses a feeder "
@@ -281,8 +317,10 @@ PENJELASAN_EN = {
     "tube_kelompok_48": ("144F tubes for 48F branches", "Tube numbers of the 144F trunk that are branched through a 48F "
                          "cable from the closure 144 at the POP (T9-T12). One FDT uses one tube; the lowest free number "
                          "is proposed."),
-    "batas_48f_km": ("Longest POP-to-FDT route for a 48F branch (km)", "Beyond this route length the FDT must be fed "
-                     "through the 96F cable (tubes T1-T8)."),
+    "batas_48f_km": ("48/96-fibre distance limit (km)", "Reviewer rule of 18 Nov 2026: up to this POP-to-FDT route length "
+                     "the FDT is fed by a 48-fibre cable (48F branch, tubes T9-T12); beyond it by a 96-fibre cable (96F, "
+                     "tubes T1-T8). Also sets the size of the new cable to the FDT and of a new feeder. Default 4 km "
+                     "(was 6 km)."),
     "pola_slack_144": ("144F length by feeder slack pattern", "New feeder: the 144F cable ends in the slack window of its "
                        "feeder number (F01 100-250 m, F02 150-300 m, +50 m per feeder; the middle is used, at most 750 m). "
                        "Off = use the fixed stub length."),
@@ -306,11 +344,11 @@ PENJELASAN_EN = {
                             "(comma separated). The engineering rules ask to avoid footways and motorways."),
     "kelas_seberang": ("Road classes for 9 m crossing poles", "Road classes counted as a crossing that needs 9 m poles on "
                        "both sides. Service roads, living streets and tracks are not counted."),
-    "utamakan_aturan_6km": ("Prefer the tube group of the 6 km rule (engineering rules 3.1-3.2)", "Candidates whose tube group fits the 6 km rule "
-                            "(up to 6 km: 48F branch T9-T12; beyond: 96F cable T1-T8) are preferred; others are used "
-                            "only when none fits. Default No: optical loss depends on route length, not fibre count "
-                            "(ITU-T G.652, G.984.2), and on 213 designs in 4 cities the F/T folder matched 54 % with No vs "
-                            "36 % with Yes, with 421 vs 563 km of new cable. A 48F branch over 6 km is still rejected."),
+    "utamakan_aturan_6km": ("Prefer the tube group of the 48/96 distance rule", "Candidates whose tube group fits the "
+                            "distance rule (within the limit: 48F branch T9-T12; beyond: 96F cable T1-T8) are preferred; "
+                            "others are used only when none fits. Default No: optical loss depends on route length, not "
+                            "fibre count (ITU-T G.652, G.984.2), and on 213 designs in 4 cities the F/T folder matched "
+                            "54 % with No vs 36 % with Yes. A 48F branch beyond the limit is still rejected."),
     "koridor_min": ("Minimum share of the route on the feeder's own corridor", "A new 48F branch from the closure 144 is "
                     "used only when at least this share of its route follows that feeder's own cables or poles "
                     "(direction fit of the feeder to the cluster)."),
@@ -333,7 +371,8 @@ PENJELASAN_EN = {
     "detour_maks": ("Maximum detour", "New cable length divided by the straight distance from tap to FDT."),
     "cabang_maks_m": ("Longest new branch (m)", "Longest new cable from the tap to the FDT that still makes sense."),
     "rasio_jalur_maks": ("Longest route through a feeder (x a new feeder)", "Reuse a feeder only if (POP-to-tap + new cable) is at most this many times "
-                         "a new feeder straight from the POP. Calibrated on 17 real designs."),
+                         "a new feeder straight from the POP. Calibrated on 17 real designs. Since 1.5.0 it rejects only "
+                         "when 'Reject a feeder whose route is much longer' is on."),
     "zona_batas": ("'Please review' band", "Results this close to the route limit above are marked 'please review' so "
                    "a designer checks both options."),
     "faktor_tiang_eksisting": ("Cost factor: existing poles", "Relative cost per metre of running along existing "

@@ -10,6 +10,7 @@ import json
 import os
 
 from . import geo, mesin, osm, peta_dasar, validasi
+from . import saran as _saran
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -39,8 +40,14 @@ def ringkas(h):
     rute = sel["rute"] if sel else (fb if h["keputusan"] == "FEEDER_BARU" else None)
     seg = [{"k": s[0], "n": mesin.label_kelas(s[0]), "ll": _ll(L, s[2])} for s in rute["segmen"]] if rute else []
     kd = []
-    for i, k in enumerate(h["kandidat"][:6]):
+    s = h.get("saran")
+    tampil = list(enumerate(h["kandidat"][:6]))
+    if s:
+        tampil += [(i, k) for i, k in enumerate(h["kandidat"]) if k is s["kandidat"] and i >= 6]
+    for i, k in tampil:
         kd.append({"no": i + 1, "nama": k["nama"] or k["id"], "label": k["label_colo"], "sumber": k["sumber"],
+                   "biaya": round(k["biaya_relatif"]) if k.get("biaya_relatif") else None, "pilih": k is sel,
+                   "saran": bool(s and k is s["kandidat"]), "tube": (k.get("kap_info") or {}).get("tube"),
                    "model": k.get("model") or "", "kap": k["kapasitas"],
                    "ketkap": k["ket_kapasitas"], "baru": k["kabel_baru_m"], "colo": k["colo_m"], "cos": k["cos"],
                    "rasio": k.get("rasio_jalur"), "detour": k["detour"], "lolos": k["lolos"],
@@ -48,7 +55,8 @@ def ringkas(h):
                    "vonis": str(mesin.vonis_kandidat(k)), "sudut": mesin.sudut_arah(k["cos"]), "searah": k.get("searah", True),
                    "margin": k["budget"]["margin_db"], "tap": _ll(L, [k["rute"]["titik"][0]])[0],
                    "kabel": [[round(p[1], 7), round(p[0], 7)] for p in k["ll_kabel"]],
-                   "colo_ll": _ll(L, k["colo_xy"][::max(1, len(k["colo_xy"]) // 300)]) if k.get("colo_xy") else []})
+                   "colo_ll": _ll(L, _cg[::max(1, len(_cg) // 300)]) if (_cg := k.get("colo_gambar_xy") or k.get("colo_xy"))
+                   else []})
     f = h["fdt"]
     return {"kode": f["kode"], "ll": [f["ll"][1], f["ll"][0]], "kep": h["keputusan"], "batas": bool(h.get("batas")),
             "alasan": h["alasan"], "peringatan": h["peringatan"], "pop": h["pop"]["nama"] if h["pop"] else "-",
@@ -59,7 +67,29 @@ def ringkas(h):
                                                     else None),
             "bantu": round(rute["bantu_m"]) if rute else 0, "jalan": h.get("ada_jalan", False),
             "nomor": h["penomoran"], "splitter": f.get("splitter"), "rasio": f.get("rasio") or 4, "premises": f.get("premises"),
-            "berkas": f.get("berkas") or "", "nkabel": h.get("n_kabel_diperiksa", 0)}
+            "berkas": f.get("berkas") or "", "nkabel": h.get("n_kabel_diperiksa", 0),
+            # 1.6.0: dasbor keputusan, penjelasan lima bagian, Saran Tembuku
+            "pj": [[t, list(isi)] for t, isi in (h.get("penjelasan") or [])],
+            "saran": None if not s else {
+                "ringkas": s["ringkas"], "alasan": s["alasan"], "jenis": s["jenis"], "yakin": s["yakin"],
+                "hemat": s["hemat_pct"], "b0": s["biaya_aturan"], "b1": s["biaya_saran"], "m0": s["margin_aturan"],
+                "m1": s["margin_saran"], "longgar": s["dilonggarkan"], "akibat": s["akibat"], "dipakai": s.get("dipakai"),
+                "no": next((i + 1 for i, k in enumerate(h["kandidat"]) if k is s["kandidat"]), None),
+                "nama": s["kandidat"].get("nama") or s["kandidat"].get("id"),
+                "tube": (s["kandidat"].get("kap_info") or {}).get("tube")},
+            "oleh": h.get("dipilih_desainer") or "", "penting": h.get("penting") or [],
+            "janggal": bool(h.get("pakai_kabel_janggal")),
+            "biaya": round(sel["biaya_relatif"]) if sel and sel.get("biaya_relatif") else (
+                round(_saran.biaya_feeder_baru(fb, {}) or 0) if fb and h["keputusan"] == "FEEDER_BARU"
+                else None),
+            "biaya_fb": round(_saran.biaya_feeder_baru(fb, {}) or 0) if fb else None,
+            "colo": sel.get("colo_m") if sel else None, "infra": round(sel.get("new_infra_m") or 0) if sel else None,
+            "pole": round(sel.get("colo_pole_m") or 0) if sel else None,
+            "core": (sel.get("core_cabang") if sel else (fb or {}).get("core")),
+            "jalur": (sel.get("jalur_serat_m") if sel else round((fb or {}).get("panjang_est_m") or 0) or None),
+            "db": (sel.get("budget") or {}).get("total_db") if sel else None,
+            "margin": (sel.get("budget") or {}).get("margin_db") if sel else None,
+            "rapi": (sel or (fb if h["keputusan"] == "FEEDER_BARU" else None) or {}).get("gambar_diperbaiki_m") or 0}
 
 
 KAMUS = [
@@ -194,9 +224,36 @@ details{border-bottom:1px solid var(--line);padding:8px 16px;font-size:12.5px}su
 .leg i{display:inline-block;width:22px;height:4px;margin-right:6px;vertical-align:middle}
 button{font:600 12px Inter;border:1px solid var(--ink);background:#fff;border-radius:6px;padding:4px 10px;cursor:pointer}
 footer{font-size:11px;color:var(--mut);padding:8px 16px}
-</style></head><body>
+.tabs{margin-left:auto;display:flex;gap:6px;position:relative;z-index:1}
+.tabs button{background:#ffffff14;color:#fff;border-color:#ffffff55;font-size:13px;padding:6px 14px}
+.tabs button.on{background:var(--emas);color:var(--ink);border-color:var(--emas)}
+#dash{flex:1 1 auto;overflow:auto;padding:16px 22px 30px;min-height:0}
+body.dash .wrap{display:none}body:not(.dash) #dash{display:none}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.card b{display:block;font:800 22px var(--display);line-height:1.2}.card small{color:var(--mut);font-size:11.5px}
+.card.aksen{border-color:#7c3aed;background:#faf8ff}.card.awas{border-color:#e7b25a;background:#fffaf0}
+.pnl{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin-top:14px;min-width:0}
+.pnl h3{font:800 15px var(--display);margin:0 0 2px}.pnl .muted{margin-bottom:8px}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}@media(max-width:1000px){.grid2{grid-template-columns:minmax(0,1fr)}}
+.risk{display:flex;gap:10px;align-items:flex-start;padding:7px 4px;border-bottom:1px solid var(--line);cursor:pointer}.risk:hover{background:#f7f4ec}
+.lvl{flex:none;width:11px;height:11px;border-radius:50%;margin-top:5px}
+.barbox{background:#f1eee4;border-radius:4px;width:110px;height:9px;display:inline-block;vertical-align:middle;margin-right:6px;position:relative}
+.barbox i{position:absolute;left:0;top:0;bottom:0;border-radius:4px}
+.tb{display:inline-grid;grid-template-columns:repeat(12,24px);gap:2px}.tb span{height:21px;border-radius:3px;font-size:9.5px;text-align:center;line-height:21px;border:1px solid #d6d2c4}
+.tb .lama{background:#cbd5e1;color:#475569}.tb .baru{background:var(--emas);border-color:#b7791f;font-weight:700}.tb .kosong{background:#fff;border-color:#5fb3a3;color:#0f766e}
+.tb .g48{margin-left:0}.tb span:nth-child(9){margin-left:6px}
+.sar{background:#f5f3ff;border-left:4px solid #7c3aed;padding:8px 12px;margin:8px 0;border-radius:4px}
+.sar.pakai{background:#eefbf5;border-color:#0f766e}
+.pj h4{margin:12px 0 4px;font:700 13.5px var(--display)}.pj ul{margin:0;padding-left:18px}.pj li{margin:2px 0}
+.SARAN{background:#7c3aed}
+th.urut{cursor:pointer}th.urut:hover{color:var(--ink)}
+.cmp div{display:flex;align-items:center;gap:8px;font-size:12px;margin:3px 0}.cmp span.nm{width:210px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmp .b{height:12px;border-radius:3px}
+</style></head><body class="dash">
 <header><img src="data:image/svg+xml;base64,__LOGO__" alt=""><div><h1>Tembuku <span>&middot;</span> Laporan Desain Feeder</h1>
-<small id="sub"></small></div></header>
+<small id="sub"></small></div><div class="tabs"><button id="t-dash" class="on" onclick="tab(1)">Dasbor keputusan</button><button id="t-det" onclick="tab(0)">Detail per FDT</button></div></header>
+<section id="dash"></section>
 <div class="wrap"><aside><div class="lead" id="lead"></div><div id="uji"></div><div id="cek"></div><div class="chips" id="chips"></div><div id="list"></div>
 <footer>__ATRIB__. Usulan otomatis &mdash; wajib ditinjau desainer sebelum dimasukkan ke compile desain feeder.
 <br><button onclick="csv()">Unduh CSV ringkasan</button></footer></aside>
@@ -220,8 +277,8 @@ const nb=D.filter(d=>d.batas).length;
 document.getElementById("lead").innerHTML=`<b>Ringkasan:</b> <b>${n("COLO")}</b> pakai feeder yang ada, <b>${n("COLO_CEK")}</b> pakai feeder yang ada tetapi sisa tube perlu dicek, <b>${n("FEEDER_BARU")}</b> feeder baru dari POP, <b>${n("PERLU_MANUAL")}</b> perlu dirancang manual`+
 (nb?`, <b>${nb}</b> perlu ditinjau karena dua pilihannya hampir seimbang.`:".")+
 `<br><b>Langkah Anda:</b> klik tiap FDT di daftar, baca alasannya, lalu cek jalurnya di peta. Dahulukan yang bertanda <i>perlu ditinjau</i>, <i>cek sisa tube</i> atau <i>perlu dirancang manual</i>.`;
-const chips=[["ALL","Semua"],["COLO","Pakai feeder"],["COLO_CEK","Cek sisa tube"],["FEEDER_BARU","Feeder baru"],["PERLU_MANUAL","Manual"],["BATAS","Perlu ditinjau"]];
-const cocok=(d,f)=>f=="ALL"||d.kep==f||(f=="BATAS"&&d.batas);
+const chips=[["ALL","Semua"],["COLO","Pakai feeder"],["COLO_CEK","Cek sisa tube"],["FEEDER_BARU","Feeder baru"],["PERLU_MANUAL","Manual"],["BATAS","Perlu ditinjau"],["SARAN","Ada Saran Tembuku"]];
+const cocok=(d,f)=>f=="ALL"||d.kep==f||(f=="BATAS"&&d.batas)||(f=="SARAN"&&!!d.saran);
 function rChips(){document.getElementById("chips").innerHTML=chips.map(c=>{const j=D.filter(d=>cocok(d,c[0])).length;
 return `<span class="chip ${filt==c[0]?"on":""}${j?"":" kosong"}" data-f="${c[0]}" title="${j} FDT">${c[1]} (${j})</span>`}).join("");
 document.querySelectorAll(".chip").forEach(e=>e.onclick=()=>{filt=e.dataset.f;rChips();rList()})}
@@ -229,7 +286,7 @@ function rList(){const pilih=D.map((d,i)=>({d,i})).filter(o=>cocok(o.d,filt));
 if(!pilih.length){const nm=(chips.find(c=>c[0]==filt)||["",""])[1];document.getElementById("list").innerHTML=
 `<div style="padding:14px 16px;color:#5b6b78;font-size:13px">Tidak ada FDT dengan kategori <b>${esc(nm)}</b> di laporan ini. Pilih <b>Semua</b> untuk melihat semua FDT.</div>`;return}
 document.getElementById("list").innerHTML=pilih.map(({d,i})=>
-`<div class="it ${i==cur?"on":""}" data-i="${i}"><b>${esc(d.kode)}</b><span class="tag ${d.kep}">${NAMA[d.kep]}</span>${d.batas?'<span class="tag BATAS">perlu ditinjau</span>':""}
+`<div class="it ${i==cur?"on":""}" data-i="${i}"><b>${esc(d.kode)}</b><span class="tag ${d.kep}">${NAMA[d.kep]}</span>${d.batas?'<span class="tag BATAS">perlu ditinjau</span>':""}${d.saran?`<span class="tag SARAN">${d.saran.dipakai?"saran dipakai":"ada saran"}</span>`:""}
 <div style="font-size:12px;color:#5b6b78">${d.baru!=null?("kabel baru "+idn(d.baru)+" m · "):""}${esc(d.pop)} (${idn(d.jarak_pop)} m)</div></div>`).join("");
 document.querySelectorAll(".it").forEach(e=>e.onclick=()=>show(+e.dataset.i))}
 const map=L.map("peta",{preferCanvas:true,maxZoom:20});map.attributionControl.setPrefix("Leaflet");
@@ -278,7 +335,7 @@ window.addEventListener("resize",_ulang);window.addEventListener("load",()=>setT
 function show(i){cur=i;rList();const d=D[i];grp.clearLayers();
 d.kandidat.forEach(k=>{L.polyline(k.kabel,{color:k.lolos?"#f59e0b":"#9ca3af",weight:k.lolos?4:2,opacity:.8}).bindTooltip(`#${k.no} ${esc(k.nama)} · ${esc(k.ketkap)}`).addTo(grp);
 L.circleMarker(k.tap,{radius:5,color:"#111",fillColor:k.lolos?"#f59e0b":"#d1d5db",fillOpacity:1,weight:1}).bindTooltip("Titik sambung kandidat #"+k.no).addTo(grp)});
-const sel=d.kandidat.find(k=>k.lolos||d.kep=="COLO_CEK");if(sel&&sel.colo_ll.length&&d.kep!="FEEDER_BARU")L.polyline(sel.colo_ll,{color:"#a855f7",weight:5,opacity:.7}).bindTooltip("Feeder yang dipakai: POP → titik sambung").addTo(grp);
+const sel=d.kandidat.find(k=>k.pilih)||d.kandidat.find(k=>k.lolos||d.kep=="COLO_CEK");if(sel&&sel.colo_ll.length&&d.kep!="FEEDER_BARU")L.polyline(sel.colo_ll,{color:"#a855f7",weight:5,opacity:.7}).bindTooltip("Feeder yang dipakai: POP → titik sambung").addTo(grp);
 d.seg.forEach(s=>L.polyline(s.ll,{color:W[s.k]||"#22c55e",weight:6,dashArray:s.k=="GARIS_BANTU"?"8 8":null}).bindTooltip(esc(s.n)).addTo(grp));
 if(d.uji){d.uji.desain_ll.forEach(l=>L.polyline(l,{color:"#111",weight:3,dashArray:"6 6"}).bindTooltip("Desain desainer (kabel baru)").addTo(grp));
 d.uji.colo_ll.forEach(l=>L.polyline(l,{color:"#111",weight:2,opacity:.5,dashArray:"2 6"}).bindTooltip("Desain desainer (colo cable)").addTo(grp))}
@@ -289,14 +346,92 @@ const nm=d.nomor;document.getElementById("det").innerHTML=`<h2>${esc(d.kode)} <s
 <div class="kpi"><div>Folder compile<b>F${nm.feeder}_T${nm.t}</b></div><div>Kabel baru<b>${d.baru!=null?idn(d.baru)+" m":"-"}</b></div><div>Jika feeder baru dari POP<b>${d.fb!=null?idn(d.fb)+" m":"-"}</b></div>
 <div>Splitter<b>${d.splitter?d.splitter+"x1x"+d.rasio:"-"}</b></div><div>Kabel yang diperiksa<b>${d.nkabel}</b></div><div>Data jalan<b>${d.jalan?"ada":"tidak ada"}</b></div></div>
 ${d.uji?`<div class="why" style="border-color:${d.uji.cocok?"#0e7c7b":"#c2410c"}"><b>Uji akurasi: keputusan ${d.uji.cocok?"SAMA":"BERBEDA"}.</b> Desainer: ${esc(NAMA[d.uji.desainer]||d.uji.desainer)} (${esc(d.uji.folder_desainer)}). Tembuku: ${esc(NAMA[d.uji.tembuku]||d.uji.tembuku)} (${esc(d.uji.folder_tembuku)}).${d.uji.tap_meleset_m!=null?" Titik sambung berselisih "+idn(d.uji.tap_meleset_m)+" m.":""} Kabel baru Tembuku ${d.uji.baru_tembuku_m!=null?idn(d.uji.baru_tembuku_m)+" m":"-"}, desainer ${idn(d.uji.baru_desainer_m)} m.${d.uji.jalur_sesuai_pct!=null?" Jalurnya "+d.uji.jalur_sesuai_pct+"% sama.":""}</div>`:""}
-${d.alasan.map(a=>`<div class="why">${esc(a)}</div>`).join("")}${d.peringatan.map(a=>`<div class="warn">${esc(a)}</div>`).join("")}
+${detPj(d)}
 ${d.bantu>0?`<div class="warn">${idn(d.bantu)} m jalur masih berupa garis bantu lurus (tidak ada data jalan atau kabel di bagian itu): gambar ulang mengikuti tiang atau jalan.</div>`:""}
 ${d.kandidat.length?"":`<div class="why" style="border-color:#5a6280">Tidak ada kabel feeder di sekitar FDT yang bisa dijadikan kandidat.</div>`}${!d.kandidat.length?"":`<div style="font-size:12px;color:#5b6b78;margin:8px 0 2px">Feeder yang sudah ada di sekitar FDT dan hasil pemeriksaannya:</div>
-<table><tr><th>#</th><th>Feeder</th><th>Sisa tube</th><th>Kabel baru ke FDT</th><th>Feeder dari POP ke titik sambung</th><th>Arah ke FDT</th><th title="Panjang jalur lewat feeder ini dibanding feeder baru dari POP">Panjang jalur vs feeder baru</th><th>Redaman sinyal</th><th>Hasil</th></tr>
-${d.kandidat.map(k=>`<tr class="${k.lolos?"ok":"no"}"><td>${k.no}</td><td><b>${esc(k.nama)}</b><br>${esc(k.label)} ${esc(k.model)}</td><td>${esc(KAP[k.kap]||k.kap)}<br><small>${esc(k.ketkap)}</small></td>
-<td>${idn(k.baru)} m<br><small>${idn(k.detour,1)}× jarak lurus</small></td><td>${k.colo!=null?idn(k.colo)+" m":"tidak terlihat tersambung"}</td><td>${k.sudut==null?"-":(k.searah?"searah":"menjauh")+" ("+k.sudut+"°)"}</td><td>${k.rasio==null?"-":idn(k.rasio,2)+"×"}</td>
+${cmp(d)}
+<table><tr><th>#</th><th>Feeder</th><th>Sisa tube</th><th>Kabel baru ke FDT</th><th>Feeder dari POP ke titik sambung</th><th>Arah ke FDT</th><th title="Panjang jalur lewat feeder ini dibanding feeder baru dari POP">Panjang jalur vs feeder baru</th><th title="Model atasan: colo cable x1, colo pole x20, new infra x100 per meter">Biaya relatif</th><th>Redaman sinyal</th><th>Hasil</th></tr>
+${d.kandidat.map(k=>`<tr class="${k.lolos?"ok":"no"}"${k.saran?' style="background:#f5f3ff"':""}><td>${k.no}</td><td><b>${esc(k.nama)}</b>${k.pilih?' <span class="tag COLO">dipakai</span>':""}${k.saran?' <span class="tag SARAN">Saran Tembuku</span>':""}<br>${esc(k.label)} ${esc(k.model)}</td><td>${esc(KAP[k.kap]||k.kap)}<br><small>${esc(k.ketkap)}</small></td>
+<td>${idn(k.baru)} m<br><small>${idn(k.detour,1)}× jarak lurus</small></td><td>${k.colo!=null?idn(k.colo)+" m":"tidak terlihat tersambung"}</td><td>${k.sudut==null?"-":(k.searah?"searah":"menjauh")+" ("+k.sudut+"°)"}</td><td>${k.rasio==null?"-":idn(k.rasio,2)+"×"}</td><td>${k.biaya==null?"-":idn(k.biaya)}</td>
 <td>${idn(k.db,1)} dB<br><small>sisa ${idn(k.margin,1)} dB</small></td><td>${k.lolos?"<b>"+esc(k.vonis)+"</b>":esc(k.vonis)}</td></tr>`).join("")}</table>`}`}
-function csv(){const r=[["FDT","Keputusan","Perlu ditinjau","Folder compile (F/T)","Kabel baru (m)","Jika feeder baru dari POP (m)","POP","Alasan"]].concat(D.map(d=>[d.kode,NAMA[d.kep]||d.kep,d.batas?"ya":"",`F${d.nomor.feeder}_T${d.nomor.t}`,d.baru,d.fb,d.pop,d.alasan.join(" | ")]));
+/* ---------- 1.6.0: penjelasan lima bagian, Saran Tembuku, perbandingan biaya, dasbor ---------- */
+const OLEH={SARAN:"Desainer memakai Saran Tembuku",MANUAL:"Dipilih sendiri oleh desainer"};
+function sarBox(d,kecil){const s=d.saran;if(!s)return"";
+ return `<div class="sar ${s.dipakai?"pakai":""}"><b>${s.dipakai?"✓ Saran Tembuku dipakai.":"💡 "+esc(s.ringkas)}</b><br>${esc(s.alasan)}`+
+ (s.akibat.length?`<br><b>Yang perlu ditimbang:</b> ${s.akibat.map(esc).join("; ")}.`:"")+
+ (kecil?"":`<br><span class="muted">Keyakinan ${s.yakin=="tinggi"?"tinggi":"sedang"}. Saran ini tetap dalam batas teknis: tube kosong, redaman, aturan 4 km, kapasitas closure dan panjang kabel baru semuanya aman. ${s.dipakai?"":"Untuk memakainya, centang di jendela Saran Tembuku di QGIS, atau klik dua kali pilihan #"+(s.no||"-")+" di panel Tembuku."}</span>`)+`</div>`}
+function detPj(d){let h="";if(d.oleh)h+=`<div class="why" style="border-color:#7c3aed"><b>${esc(OLEH[d.oleh]||d.oleh)}.</b></div>`;
+ h+=sarBox(d);
+ if(!d.pj||!d.pj.length)return h+d.alasan.map(a=>`<div class="why">${esc(a)}</div>`).join("")+d.peringatan.map(a=>`<div class="warn">${esc(a)}</div>`).join("");
+ const gaya=["why","why","","warn",""];
+ h+=`<div class="pj">`+d.pj.map((b,j)=>j==4?"":`<h4>${j+1}. ${esc(b[0])}</h4>`+(j==2?`<ul>${b[1].map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:b[1].map(x=>`<div class="${gaya[j]||"why"}"${j==1?' style="border-color:#2b3a8f;background:#f1f3fb"':""}>${esc(x)}</div>`).join(""))).join("")+`</div>`;
+ return h}
+function cmp(d){const r=d.kandidat.filter(k=>k.biaya&&(k.lolos||k.saran||k.pilih)).map(k=>({n:"#"+k.no+" "+k.nama+(k.tube?" T"+k.tube:""),b:k.biaya,c:k.pilih?"#0f766e":(k.saran?"#7c3aed":"#c9c3b2")}));
+ if(d.biaya_fb)r.push({n:"Feeder baru dari POP",b:d.biaya_fb,c:d.kep=="FEEDER_BARU"?"#2b3a8f":"#9aa3c7"});
+ if(r.length<2)return"";const mx=Math.max(...r.map(x=>x.b));
+ return `<div style="font-size:12px;color:#5b6b78;margin:10px 0 2px">Perbandingan biaya relatif (makin pendek makin hemat). Hijau: yang dipakai. Ungu: Saran Tembuku.</div><div class="cmp">`+
+ r.sort((a,b)=>a.b-b.b).map(x=>`<div><span class="nm" title="${esc(x.n)}">${esc(x.n)}</span><i class="b" style="width:${Math.max(2,Math.round(300*x.b/mx))}px;background:${x.c}"></i><span>${idn(x.b)}</span></div>`).join("")+`</div>`}
+function risiko(d){const r=[];
+ if(d.kep=="PERLU_MANUAL")r.push([100,"Perlu dirancang manual: "+(d.alasan[0]||"")]);
+ if(d.margin!=null&&d.margin<0)r.push([60,`Redaman sudah memakai cadangan (sisa ${idn(d.margin,1)} dB), sebaiknya diukur di lapangan`]);
+ else if(d.margin!=null&&d.margin<1)r.push([25,`Sisa redaman tipis (${idn(d.margin,1)} dB)`]);
+ if(d.kep=="COLO_CEK")r.push([45,"Pastikan dulu tube-nya memang masih kosong"]);
+ if(d.batas)r.push([40,"Dua pilihan hampir sama bagusnya, coba lihat keduanya"]);
+ if(d.bantu>0)r.push([30,`Ada ${idn(d.bantu)} m garis bantu lurus yang perlu digambar ulang`]);
+ if(d.saran&&!d.saran.dipakai)r.push([d.saran.yakin=="tinggi"?35:20,"Saran Tembuku: "+d.saran.ringkas]);
+ if(d.rapi)r.push([15,`${idn(d.rapi)} m kabel existing digambar ulang mengikuti jalan, cek sebentar`]);
+ if(d.kep=="COLO_MANUAL")r.push([20,"Pilihan desainer, baca catatannya"]);
+ (d.penting||[]).forEach(p=>r.push([60,p]));
+ if(d.janggal)r.push([20,"Memakai kabel existing yang gambarnya kurang rapi"]);
+ if(d.peringatan.length)r.push([5*Math.min(4,d.peringatan.length),d.peringatan.length+" catatan"]);
+ return r}
+function tab(dash){document.body.classList.toggle("dash",!!dash);document.getElementById("t-dash").classList.toggle("on",!!dash);document.getElementById("t-det").classList.toggle("on",!dash);if(!dash)setTimeout(pas,30)}
+function buka(i){tab(0);filt="ALL";rChips();show(i)}
+let urut={k:"risk",a:-1};
+function rDash(){const el=document.getElementById("dash");if(!D.length){el.innerHTML="<p>Tidak ada FDT.</p>";return}
+ const R=D.map((d,i)=>{const r=risiko(d);return{d,i,r,s:r.reduce((a,x)=>a+x[0],0)}});
+ const sum=(f)=>D.reduce((a,d)=>a+(+f(d)||0),0);
+ const b48=sum(d=>d.core==48?d.baru:0),b96=sum(d=>d.core==96?d.baru:0),bl=sum(d=>d.core!=48&&d.core!=96?d.baru:0);
+ const nSar=D.filter(d=>d.saran).length,nRisk=R.filter(x=>x.s>=25).length,T=M.temuan||[],nCek=T.filter(t=>t.tingkat=="PERINGATAN"||t.tingkat=="FATAL").length;
+ const mg=D.map(d=>d.margin).filter(x=>x!=null),mmin=mg.length?Math.min(...mg):null;
+ let h=`<div class="cards">
+<div class="card"><small>FDT dirancang</small><b>${D.length}</b><small>${n("COLO")+n("COLO_CEK")+n("COLO_MANUAL")} pakai feeder yang ada · ${n("FEEDER_BARU")} feeder baru · ${n("PERLU_MANUAL")} manual</small></div>
+<div class="card"><small>Kabel baru total</small><b>${idn(sum(d=>d.baru))} m</b><small>${b48?"48C "+idn(b48)+" m ":""}${b96?"· 96C "+idn(b96)+" m":""}${bl?" · lain "+idn(bl)+" m":""}</small></div>
+<div class="card"><small>Numpang feeder (colo cable)</small><b>${idn(sum(d=>d.colo))} m</b><small>serat lewat kabel feeder yang sudah ada</small></div>
+<div class="card"><small>Perlu tiang baru</small><b>${idn(sum(d=>d.infra))} m</b><small>New Infra</small></div>
+<div class="card"><small>Biaya relatif total</small><b>${idn(sum(d=>d.biaya))}</b><small>numpang kabel x1, numpang tiang x20, tiang baru x100</small></div>
+<div class="card ${mmin!=null&&mmin<0?"awas":""}"><small>Sisa redaman terkecil</small><b>${mmin==null?"-":idn(mmin,1)+" dB"}</b><small>setelah cadangan 3 dB</small></div>
+<div class="card aksen"><small>Saran Tembuku</small><b>${nSar}</b><small>pilihan yang lebih hemat atau lebih aman</small></div>
+<div class="card ${nRisk?"awas":""}"><small>Perlu perhatian</small><b>${nRisk}</b><small>FDT dengan catatan penting · ${nCek} catatan data</small></div>
+<div class="card ${T.some(t=>t.kategori=="Gambar kabel"&&t.tingkat=="PERINGATAN")?"awas":""}"><small>Gambar kabel kurang rapi</small><b>${(()=>{const s=T.find(t=>t.kategori=="Gambar kabel"&&/^Ada \d+ kabel di sekitar FDT/.test(t.pesan));return s?parseInt(s.pesan.slice(4)):0})()}</b><small>di compile atau inventaris, tetap dipakai</small></div></div>`;
+ const top=R.filter(x=>x.r.length).sort((a,b)=>b.s-a.s);
+ h+=`<div class="grid2"><div class="pnl"><h3>Yang perlu Anda cek dulu</h3><div class="muted">Yang paling penting di atas. Klik salah satu untuk membuka detailnya.</div>`+
+ (top.length?top.slice(0,30).map(x=>{const lv=x.s>=60?"#b4232c":x.s>=25?"#d97706":"#5fb3a3";return `<div class="risk" onclick="buka(${x.i})"><span class="lvl" style="background:${lv}"></span><div><b>${esc(x.d.kode)}</b> <span class="tag ${x.d.kep}">${NAMA[x.d.kep]}</span><br><span style="font-size:12.5px">${x.r.sort((a,b)=>b[0]-a[0]).map(r=>esc(r[1])).join(" · ")}</span></div></div>`}).join(""):
+ `<div class="why">Tidak ada catatan penting. Tetap tinjau jalur tiap FDT di peta sebelum ditempel ke compile.</div>`)+`</div>`;
+ const S=D.map((d,i)=>({d,i})).filter(o=>o.d.saran);
+ h+=`<div class="pnl"><h3>Saran Tembuku</h3><div class="muted">Selain desain sesuai aturan, Tembuku juga mencoba pilihan yang melonggarkan aturan arah, koridor atau utara/selatan. Yang jauh lebih hemat atau lebih aman muncul di sini. Desain sesuai aturan tetap dipakai kecuali Anda memilih sarannya.</div>`+
+ (S.length?S.map(o=>`<div style="cursor:pointer" onclick="buka(${o.i})"><b>${esc(o.d.kode)}</b>${sarBox(o.d,true)}</div>`).join(""):
+ `<div class="why">Tidak ada saran kali ini. Untuk semua FDT, desain sesuai aturan sudah pilihan yang paling masuk akal. Saran baru muncul kalau ada yang minimal 20% lebih hemat, atau sinyalnya lebih aman dengan biaya hampir sama.</div>`)+`</div></div>`;
+ const GK=T.filter(t=>t.kategori=="Gambar kabel");
+ if(GK.length)h+=`<div class="pnl"><h3>Gambar kabel yang kurang rapi di data masukan</h3><div class="muted">Bentang tiang biasanya 40–50 m, jadi garis lurus ratusan meter atau belokan berbalik arah biasanya tanda gambarnya disederhanakan atau ada titik yang salah. Kabelnya tetap dipakai karena tube-nya memang ada. Kalau dipakai FDT, Tembuku menggambarnya ulang mengikuti jalan dan memberi tahu bila panjang sebenarnya mengubah ukuran kabel atau redaman. Koordinatnya bisa ditempel di pencarian Google Earth untuk merapikan gambar aslinya.</div>`+
+ GK.map(t=>`<div class="${t.tingkat=="PERINGATAN"?"warn":"why"}" style="${t.tingkat=="PERINGATAN"?"":"border-color:#9aa3c7;background:#f6f7fb"}">${t.berkas?"<b>"+esc(t.berkas)+"</b>: ":""}${esc(t.pesan)}</div>`).join("")+`</div>`;
+ h+=`<div class="pnl"><h3>Perbandingan semua FDT</h3><div class="muted">Klik judul kolom untuk mengurutkan, klik baris untuk membuka detail.</div><div style="overflow-x:auto"><table id="tbl"></table></div></div>`;
+ const G=M.tube||[];
+ if(G.length)h+=`<div class="pnl"><h3>Peta tube feeder</h3><div class="muted">Isi tube setiap feeder di POP yang dipakai. Abu-abu = sudah terpakai desain sebelumnya, emas = dipakai FDT di laporan ini, putih = masih kosong. T1–T8 jalur kabel 96 core, T9–T12 jalur cabang 48 core.</div>
+<table><tr><th>POP</th><th>Feeder</th><th>T1 … T12</th><th>Kosong</th></tr>${G.map(g=>{let k=0;const c=[];for(let t=1;t<=12;t++){const v=g.tube[t];if(!v)k++;
+ c.push(`<span class="${!v?"kosong":v=="lama"?"lama":"baru"}" title="T${t}: ${!v?"kosong":v=="lama"?"terpakai desain sebelumnya":"dipakai "+esc(v)}">${t}</span>`)}
+ return `<tr><td>${esc(g.pop)}</td><td><b>F${g.feeder}</b></td><td><div class="tb">${c.join("")}</div></td><td>${k?k+" tube":""}${k==0?'<span class="tag PERLU_MANUAL" style="margin:0">penuh</span>':k==1?' <span class="tag COLO_CEK">hampir penuh</span>':""}</td></tr>`}).join("")}</table></div>`;
+ el.innerHTML=h;rTbl(R)}
+function rTbl(R){R=R||D.map((d,i)=>{const r=risiko(d);return{d,i,r,s:r.reduce((a,x)=>a+x[0],0)}});
+ const K=[["kode","FDT",x=>x.d.kode],["kep","Keputusan",x=>NAMA[x.d.kep]],["ft","Folder",x=>x.d.nomor.feeder*100+x.d.nomor.t],["core","Kabel",x=>x.d.core],["baru","Kabel baru (m)",x=>x.d.baru],["colo","Colo (m)",x=>x.d.colo],["infra","New infra (m)",x=>x.d.infra],["biaya","Biaya relatif",x=>x.d.biaya],["margin","Sisa redaman (dB)",x=>x.d.margin],["risk","Perhatian",x=>x.s]];
+ const mx=f=>Math.max(1,...R.map(x=>+f(x)||0));const mb=mx(x=>x.d.baru),mc=mx(x=>x.d.biaya);
+ const ks=K.find(k=>k[0]==urut.k)||K[9];R.sort((a,b)=>{const p=ks[2](a),q=ks[2](b);return (p==q?0:(p==null?1:q==null?-1:(p>q?1:-1)))*urut.a});
+ const bar=(v,m,c)=>v==null?"-":`<span class="barbox"><i style="width:${Math.round(100*v/m)}%;background:${c}"></i></span>${idn(v)}`;
+ document.getElementById("tbl").innerHTML=`<tr>${K.map(k=>`<th class="urut" onclick="urut={k:'${k[0]}',a:urut.k=='${k[0]}'?-urut.a:1};rTbl()">${k[1]}${urut.k==k[0]?(urut.a>0?" ▲":" ▼"):""}</th>`).join("")}</tr>`+
+ R.map(x=>{const d=x.d,m=d.margin;return `<tr style="cursor:pointer" onclick="buka(${x.i})"><td><b>${esc(d.kode)}</b>${d.saran?' <span class="tag SARAN">saran</span>':""}</td><td><span class="tag ${d.kep}">${NAMA[d.kep]}</span></td><td>F${d.nomor.feeder}_T${d.nomor.t}</td><td>${d.core?d.core+"C":"-"}</td>
+<td>${bar(d.baru,mb,"#0f766e")}</td><td>${d.colo==null?"-":idn(d.colo)}</td><td>${d.infra==null?"-":idn(d.infra)}</td><td>${bar(d.biaya,mc,"#2b3a8f")}</td>
+<td style="color:${m==null?"inherit":m<0?"#b4232c":m<1?"#b7791f":"#0f766e"};font-weight:600">${m==null?"-":idn(m,1)}</td><td>${x.s?`<span class="lvl" style="display:inline-block;margin:0 4px 0 0;background:${x.s>=60?"#b4232c":x.s>=25?"#d97706":"#5fb3a3"}"></span>${x.r.length}`:"-"}</td></tr>`}).join("")}
+function csv(){const r=[["FDT","Keputusan","Perlu ditinjau","Folder compile (F/T)","Kabel (core)","Kabel baru (m)","Colo cable (m)","New infra (m)","Biaya relatif","Sisa redaman (dB)","Jika feeder baru dari POP (m)","POP","Saran Tembuku","Alasan"]].concat(D.map(d=>[d.kode,NAMA[d.kep]||d.kep,d.batas?"ya":"",`F${d.nomor.feeder}_T${d.nomor.t}`,d.core,d.baru,d.colo,d.infra,d.biaya,d.margin,d.fb,d.pop,d.saran?d.saran.ringkas:"",d.alasan.join(" | ")]));
 const t=r.map(x=>x.map(v=>`"${String(v==null?"":v).replace(/"/g,'""')}"`).join(",")).join("\n");const a=document.createElement("a");
 a.href=URL.createObjectURL(new Blob(["﻿"+t],{type:"text/csv"}));a.download="tembuku_ringkasan.csv";a.click()}
 (function(){const U=M.uji;if(!U||!U.ringkasan)return;const r=U.ringkasan;
@@ -312,5 +447,5 @@ const B=M.berkas||{},BK=M.bukti||{};h+=`<details><summary>Berkas yang dibaca dan
 const P=M.parameter||{};h+=`<details><summary>Dasar keputusan dan nilai yang dipakai</summary><table><tr><th>Pengaturan</th><th>Nilai</th><th>Jenis</th><th>Dasar</th></tr>${Object.keys(P).map(k=>`<tr><td>${esc(k)}</td><td><b>${esc(P[k][0])}</b></td><td>${esc(P[k][1])}</td><td>${esc(P[k][2])}</td></tr>`).join("")}</table></details>`;
 h+=`<details><summary>Kamus istilah</summary><table>${(M.istilah||[]).map(x=>`<tr><td><b>${esc(x[0])}</b></td><td>${esc(x[1])}</td></tr>`).join("")}</table></details>`;
 document.getElementById("cek").innerHTML=h})();
-rChips();rList();if(D.length)show(0);else map.setView([-2.5,118],5);
+rChips();rList();if(D.length)show(0);else map.setView([-2.5,118],5);rDash();
 </script></body></html>"""

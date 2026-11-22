@@ -34,6 +34,7 @@ KANON = [
     "New FDT", "Eksisting FDT", "OLT", "Keterangan Infra", "New Cable Galian", "Collo Tiang", "New Infra", "Boundary",
     "Tiang 6 Meter", "Tiang 7 Meter", "Tiang 9 Meter", "New Tiang 6 Meter", "New Tiang 7 Meter", "New Tiang 9 Meter",
     "Eksisting Tiang 6 Meter", "Eksisting Tiang 7 Meter", "Eksisting Tiang 9 Meter", "FDT 72", "POP",
+    "Informasi Route Existing",
 ]
 CORE = (12, 24, 48, 72, 96, 144, 192, 288, 576)
 GANTI = [  # variasi ejaan yang dikenal -> bentuk template (diterapkan sebelum pencocokan kemiripan)

@@ -30,8 +30,9 @@ class BerkasDitolak(Exception):
 class _Hitung(object):
     """Pembungkus stream yang menghitung byte terbaca dan menghentikan zip bomb."""
 
-    def __init__(self, fh, batas):
+    def __init__(self, fh, batas, arsip=None):
         self.fh, self.batas, self.n = fh, batas, 0
+        self.arsip = arsip          # ZipFile pemilik entri: ikut ditutup, supaya berkas KMZ tidak tetap terkunci
 
     def read(self, k=-1):
         b = self.fh.read(k if k and k > 0 else 1 << 20)
@@ -41,7 +42,12 @@ class _Hitung(object):
         return b
 
     def close(self):
-        self.fh.close()
+        try:
+            self.fh.close()
+        finally:
+            if self.arsip is not None:
+                self.arsip.close()
+                self.arsip = None
 
 
 def _nama_aman(n):
@@ -86,17 +92,21 @@ def buka(path):
     if not zipfile.is_zipfile(path):
         raise BerkasDitolak("bukan KMZ/zip yang sah")
     zf = zipfile.ZipFile(path)
-    info = zf.infolist()
-    if len(info) > MAKS_ENTRI:
-        raise BerkasDitolak("KMZ berisi terlalu banyak entri (%d)" % len(info))
-    kml = [i for i in info if i.filename.lower().endswith(".kml") and _nama_aman(i.filename)]
-    if not kml:
-        raise BerkasDitolak("KMZ tidak berisi KML")
-    pilih = next((i for i in kml if i.filename.lower() == "doc.kml"), kml[0])
-    batas = min(MAKS_BYTE, max(64 * 1024 ** 2, pilih.compress_size * MAKS_RASIO))
-    with zf.open(pilih) as fh:
-        _cek_prolog(fh.read(PROLOG))
-    return _Hitung(zf.open(pilih), batas)
+    try:
+        info = zf.infolist()
+        if len(info) > MAKS_ENTRI:
+            raise BerkasDitolak("KMZ berisi terlalu banyak entri (%d)" % len(info))
+        kml = [i for i in info if i.filename.lower().endswith(".kml") and _nama_aman(i.filename)]
+        if not kml:
+            raise BerkasDitolak("KMZ tidak berisi KML")
+        pilih = next((i for i in kml if i.filename.lower() == "doc.kml"), kml[0])
+        batas = min(MAKS_BYTE, max(64 * 1024 ** 2, pilih.compress_size * MAKS_RASIO))
+        with zf.open(pilih) as fh:
+            _cek_prolog(fh.read(PROLOG))
+        return _Hitung(zf.open(pilih), batas, zf)
+    except BaseException:
+        zf.close()
+        raise
 
 
 def _ln(tag):
