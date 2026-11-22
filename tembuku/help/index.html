@@ -95,6 +95,11 @@ only in the description table of a KMZ are read too. Presentations, documents an
 Very large inventory files are fine; the first run builds a small index of your work area (a few seconds), later runs
 reuse it.</p>
 
+<div class="tip"><b>New in 1.5.0.</b> An existing feeder that still has a free tube is used for the new FDT (a long route is
+only noted). The FDTs of one project file are designed together, so one cluster stays on one feeder. The cable is 48
+fibres up to 4 km from the POP along the real route and 96 fibres beyond, also for a new feeder. Each design KMZ has a
+folder <i>Informasi Route Existing</i> listing the existing cables the route rides on, with their NAME and DESCR2.</div>
+
 <div class="tip"><b>New in 1.4.0.</b> Free tubes are read from the folders of the feeder design compilation only: one feeder
 is one 144-fibre trunk of 12 tubes, and the T number of a folder (<code>F2_T9</code>) is the tube it uses. T1-T8 go
 through the 96-fibre cable, T9-T12 through 48-fibre branches from the closure 144 at the POP. Tembuku proposes the lowest
@@ -118,7 +123,7 @@ is mid-cable and every tube number that the compilation does not record yet.</di
 <tr><td><span class="tag COLO">Use an existing feeder</span><br><small>(Pakai feeder yang ada)</small></td><td>An existing feeder near the FDT has free tubes, runs toward the FDT and passes every check. Only a short new cable from the tap point is needed.</td><td>Check the route, then use the KMZ.</td></tr>
 <tr><td><span class="tag COLO_CEK">Use an existing feeder - check free tubes</span><br><small>(Pakai feeder yang ada - cek sisa tube)</small></td><td>Direction and length are good, but the data does not prove that the feeder still has a free tube.</td><td>Confirm the free tube with the network owner before using it.</td></tr>
 <tr><td><span class="tag COLO_MANUAL">Designer's choice</span><br><small>(Pilihan desainer)</small></td><td>You chose another candidate in the panel although Tembuku had a note on it.</td><td>The note is kept in the report for your records.</td></tr>
-<tr><td><span class="tag FEEDER_BARU">New feeder from the POP</span><br><small>(Feeder baru dari POP)</small></td><td>No existing feeder is suitable (full, wrong direction, too long a detour). A new feeder from the POP is drawn.</td><td>Check the route; redraw any straight helper line.</td></tr>
+<tr><td><span class="tag FEEDER_BARU">New feeder from the POP</span><br><small>(Feeder baru dari POP)</small></td><td>No existing feeder is suitable (no free tube for the project, wrong direction, signal too weak). A new feeder from the POP is drawn.</td><td>Check the route; redraw any straight helper line.</td></tr>
 <tr><td><span class="tag PERLU_MANUAL">Needs manual design</span><br><small>(Perlu dirancang manual)</small></td><td>Something essential is missing, for example no POP within 20 km, or Tembuku could not analyse this FDT. It is never left out of the list.</td><td>Add the missing data, or design this FDT yourself.</td></tr>
 </table>
 <h3>Marks you may see</h3>
@@ -129,13 +134,53 @@ along the poles or the road before construction.</li>
 <li><b>Accuracy test</b>: when you run <i>Accuracy test</i>, each FDT already designed in the compilation is hidden and designed
 again, and the report compares Tembuku with the designer (same decision, same folder, tap point distance, route match).</li>
 </ul>
+<h3>Why: the explanation of every result (since 1.6.0)</h3>
+<p>Every FDT comes with the same five-part explanation in the panel and in the report, so you always know where to look:</p>
+<ol>
+<li><b>Decision</b>: what to build, which F/T folder and tube, how far the fibre rides the feeder and how long the new cable is.</li>
+<li><b>Main reasons</b>: the rule and the numbers that decided it: free tube, route length and the 4 km rule (48 or 96 fibres), signal loss and what is left after the 3 dB reserve, relative cost.</li>
+<li><b>Alternatives</b>: each other feeder (and a new feeder from the POP) with the one reason it was not chosen: rejected by a rule, or how much more it costs.</li>
+<li><b>What to check</b>: the remaining risks, such as an unrecorded tube, a thin signal margin, or a redrawn existing cable.</li>
+<li><b>Tembuku's suggestion</b>: only when there is one (see below).</li>
+</ol>
+<h3>Tembuku's suggestion (since 1.6.0)</h3>
+<p>After the design that follows the rules is made, Tembuku looks at every alternative again with the <i>soft</i> rules relaxed
+(own-corridor rule, north/south rule, feeder direction, long way round). When one is clearly better, a window appears after
+the run listing the suggestions: <b>at least 20% lower relative cost</b>, or a <b>safer signal</b> (reserve intact with 1 dB to
+spare) where the rule-based design has no full reserve, for at most 10% more cost. <b>Hard limits are never relaxed</b>: a
+free tube, the optical budget, the 4 km rule for 48-fibre cable, closure capacity and the new-cable length. Nothing changes
+unless you tick a suggestion and press <i>Use ticked suggestions</i>; the KMZ files and the report are then saved again with
+your choice marked as such. Each suggestion names the rule it relaxes, what it saves, its consequence (for example "uses the
+last free tube of this feeder") and a confidence. You can also use a suggestion later: it is marked with * in the candidate
+table of the panel; double-click it.</p>
+<h3>The report dashboard (since 1.6.0)</h3>
+<p>The HTML report opens on a <b>decision dashboard</b>: totals (FDTs, new cable by size, colo cable, new infrastructure,
+relative cost, smallest signal margin), a list <b>What to check first</b> sorted by risk, the suggestions, a sortable table
+comparing every FDT, and a <b>tube map</b> of every feeder at the POPs used (used before, used by this run, still free).
+Click any FDT to open its map and explanation.</p>
+<h3>Existing cables drawn badly in the input</h3>
+<p>Some compilations draw an existing cable as one straight line of hundreds of metres across houses. Real pole spans are
+40-50 m, so a straight stretch of 300 m or more that runs along no road is a simplified drawing, not the cable route. Tembuku redraws such a stretch
+along the road between the same two ends when that road is not much longer (at most 1.4 times plus 40 m), and leaves it
+when the straight line already follows a straight road. Only the drawing changes; decisions, costs and signal loss use the
+input data. The result says how many metres were redrawn so that you can check them.</p>
+<p><b>Input check of every cable drawing.</b> Before designing, Tembuku checks the shape of every compilation and inventory
+cable between the POPs and the FDTs and lists odd ones under <i>Input check</i> and on the report dashboard, with the
+coordinates to paste into Google Earth: a straight stretch of 2 km or more (probably a broken drawing or a wrong point), a
+straight stretch of 300 m or more that follows no road, a sharp reversal (spike or V) and an out-and-back double line.
+<b>These cables are warned about, not rejected</b>: the cable and its free tubes exist in the field even when the drawing is
+wrong, and rejecting it would build a new feeder (new poles cost about 100 times more per metre) next to a feeder with a free
+tube. What can go wrong is the length: a straight line is shorter than the real route. So when an FDT uses such a cable,
+Tembuku also measures the route along the road and gives an <b>IMPORTANT</b> warning when that longer route would pass the
+4 km limit of a 48-fibre cable or use up the signal reserve. The decision itself is not changed automatically, so results stay
+stable and can always be traced back to the input data.</p>
 <h3>The candidate table</h3>
 <p>For every FDT, Tembuku lists the existing feeders nearby and what it found for each one:</p>
 <ul>
 <li><b>Free tubes</b>: whether the feeder still has a whole tube (12 fibres) free for this FDT.</li>
 <li><b>New cable to FDT</b>: the new cable from the tap point on that feeder to the FDT, and how much longer it is than a straight line.</li>
 <li><b>Direction</b>: the angle between the feeder and the way to the FDT, seen from the POP. 0&deg; points straight at the FDT; more than 60&deg; (the default limit) means the feeder runs away from it.</li>
-<li><b>Route vs new feeder</b>: the route through this feeder (POP to tap point plus the new cable) compared with a new feeder straight from the POP. 1.00&times; is the same length; above 1.24&times; (the default limit) the route is a long way round.</li>
+<li><b>Route vs new feeder</b>: the route through this feeder (POP to tap point plus the new cable) compared with a new feeder straight from the POP. 1.00&times; is the same length; above 1.24&times; the route is a long way round. Since 1.5.0 this is shown for information: a feeder with a free tube is still used.</li>
 <li><b>Signal loss</b>: the total loss of light from the POP to the customer and how much is left before the GPON class B+ limit of 28 dB.</li>
 <li><b>Result</b>: <i>Meets every condition</i>, <i>Usable, but ...</i> (something to check on site), or <i>Rejected: ...</i> with the reason in plain words.</li>
 </ul>
@@ -164,8 +209,12 @@ files with similar names if you mistyped a path.</li></ul>
 are used only as existing pole routes.</li>
 <li><b>Free tubes:</b> from the spare-fibre count (spare &divide; 12 per tube) or, for on-going feeders, tubes minus the FDTs they
 already serve. One FDT uses one tube.</li>
-<li><b>Direction:</b> the feeder must run toward the FDT as seen from the POP (at most 60&deg; off), and the route through
-the tap point must not be more than 1.24 times a new feeder from the POP. This limit was calibrated on 17 approved real designs.</li>
+<li><b>Direction:</b> the feeder must run toward the FDT as seen from the POP (at most 60&deg; off). Since 1.5.0 a feeder
+with a free tube is used even when the route through it is longer than a new feeder from the POP (the 1.24&times; limit
+of earlier versions can be switched on under <i>Advanced</i>).</li>
+<li><b>Project:</b> the FDTs of one project file are designed together; an existing feeder is used only when it has free
+tubes for all of them.</li>
+<li><b>Cable size:</b> 48 fibres up to 4 km from the POP along the real route, 96 fibres beyond.</li>
 <li><b>Route:</b> the cheapest path from the tap to the FDT along existing poles, roads and short access links (a shortest-path
 search, the standard engineering rule in FTTH planning research). Existing poles are preferred.</li>
 <li><b>Optical budget:</b> fibre loss, splitters, connectors, splices and a 3 dB margin must stay within GPON class B+ (28 dB).
