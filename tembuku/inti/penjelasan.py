@@ -14,7 +14,9 @@ from . import saran as _saran
 from .teks import T, gabung, m, km
 
 _TAP = {"slack": T("slack yang sudah ada", "an existing slack"), "closure": T("closure yang sudah ada", "an existing closure"),
-        "ujung": T("ujung kabel yang sudah ada", "the end of an existing cable")}
+        "ujung": T("ujung kabel yang sudah ada", "the end of an existing cable"),
+        "usulan": T("kabel baru FDT lain di proyek yang sama (closure baru di titik ini)",
+                    "the new cable of another FDT in the same project (a new closure at this point)")}
 
 
 def _km2(x_m):
@@ -109,10 +111,22 @@ def susun(h, prm):
             b2.append(T("Feeder ini masih punya tube kosong. Sesuai arahan, tube kosong di feeder yang ada dipakai dulu "
                         "sebelum membangun feeder baru.", "This feeder still has a free tube. As agreed, free tubes in "
                         "existing feeders are used before building a new feeder."))
-        b2.append(T("Jalur serat dari POP ke FDT %s, jadi kabelnya %d core. Sampai %s cukup 48 core, lebih dari itu 96 "
-                    "core.", "The fibre route from the POP to the FDT is %s, so the cable has %d fibres. Up to %s a "
-                    "48-fibre cable is enough; beyond that it is 96.") % (
-            _km2(js), sel.get("core_cabang") or 48, km(batas * 1000)))
+        inf2 = sel.get("kap_info") or {}
+        if sel.get("core_dari") == "TUBE":
+            nb = int(inf2.get("tube_dibawa") or 1)
+            b2.append(T("Kabel baru ini membawa %d tube (%s), jadi %d core. Aturan utama: sampai %d tube cukup 48 core "
+                        "(48 core = 4 tube), lebih dari itu 96 core. Jalur serat dari POP ke FDT %s.",
+                        "This new cable carries %d tube(s) (%s), so it has %d fibres. Main rule: up to %d tubes a "
+                        "48-fibre cable is enough (48 fibres = 4 tubes), more needs 96. The fibre route from the POP to "
+                        "the FDT is %s.") % (
+                nb, T("FDT ini", "this FDT") if nb <= 1 else T("FDT ini dan FDT lain di proyek yang sama",
+                                                              "this FDT and the other FDTs of the same project"),
+                sel.get("core_cabang") or 48, int(prm.get("batas_tube_kabel_48", 4)), _km2(js)))
+        else:
+            b2.append(T("Jalur serat dari POP ke FDT %s, jadi kabelnya %d core. Sampai %s cukup 48 core, lebih dari itu 96 "
+                        "core.", "The fibre route from the POP to the FDT is %s, so the cable has %d fibres. Up to %s a "
+                        "48-fibre cable is enough; beyond that it is 96.") % (
+                _km2(js), sel.get("core_cabang") or 48, km(batas * 1000)))
         bud = sel.get("budget") or {}
         if bud:
             mg = bud.get("margin_db") or 0

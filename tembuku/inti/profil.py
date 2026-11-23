@@ -54,10 +54,22 @@ BAWAAN = {
                         "colo cable per meter"),
     "biaya_new_infra": (100.0, "KEBIJAKAN", "Evaluasi atasan 16-11-2026: kabel baru dengan tiang baru (new infra) = 5 kali colo "
                         "pole = 100 kali colo cable per meter. Kandidat yang lolos diurutkan dari biaya termurah"),
-    "kabel_dari_sisa_tube": (False, "KEBIJAKAN", "Aturan lama (diganti arahan jarak 18-11-2026): ukuran kabel baru dari feeder "
-                             "ke FDT mengikuti sisa tube kosong. Menumpang jalur 96F (T1-T8): sisa <= batas_tube_kabel_48 "
-                             "tube -> kabel 48, lebih -> kabel 96. Bawaan Tidak: ukuran kabel dari jarak (batas_48f_km)"),
-    "batas_tube_kabel_48": (4, "KEBIJAKAN", "Sisa tube kosong paling banyak untuk kabel 48 (lebih dari ini kabel 96)"),
+    "kabel_dari_sisa_tube": (True, "KEBIJAKAN", "Arahan revisi 23-11-2026 (PRIORITAS): ukuran kabel baru dari feeder ke FDT "
+                             "mengikuti jumlah tube yang dibawanya (kabel 48 core = 4 tube): sampai batas_tube_kabel_48 "
+                             "tube -> kabel 48, lebih -> kabel 96; kabel FDT pertama sebuah proyek membawa tube seluruh "
+                             "proyek. Sesudah itu baru aturan jarak (batas_48f_km) berlaku: memilih jalur tube 48F/96F dan "
+                             "ukuran kabel feeder baru"),
+    "batas_tube_kabel_48": (4, "KEBIJAKAN", "Jumlah tube paling banyak yang dibawa kabel 48 (lebih dari ini kabel 96)"),
+    "gabung_proyek": (True, "KEBIJAKAN", "Masukan 23-11-2026: FDT satu proyek (satu berkas, berdekatan, feeder sama) "
+                      "dijadikan SATU berkas hasil dengan satu folder traksi (mis. F1_T2-T3), seperti desain di compile; FDT "
+                      "berikutnya menyambung ke kabel baru FDT pertama sehingga tidak ada dua kabel sejajar"),
+    "tulis_route_existing": (True, "KEBIJAKAN", "Ya = folder 'Informasi Route Existing' (kabel inventaris yang dilalui, NAME "
+                             "dan DESCR2) dibuat di KMZ dan layer QGIS. Tidak = bagian ini dilewati seluruhnya (lebih "
+                             "cepat). Saat Run, Tembuku bertanya bila belum ada pilihan yang diingat"),
+    "closure_utama_m": (100.0, "KEBIJAKAN", "Arahan revisi 23-11-2026: menyambung boleh di slack, tetapi closure existing "
+                        "diutamakan. Closure di kabel yang sama menggantikan slack bila kabel barunya paling banyak sekian "
+                        "meter lebih panjang (atau lebih pendek). Diuji 14 wilayah: 600 m menukar slack tepat di FDT dengan "
+                        "closure 400 m lebih jauh (Tomohon KEN01 1 -> 419 m), 100 m tidak"),
     "arah_utara_selatan": (True, "KEBIJAKAN", "Arahan finalisasi: FDT di utara POP hanya memakai feeder yang keluar ke arah "
                            "utara dari POP, FDT di selatan hanya feeder ke arah selatan (dan sebaliknya tidak boleh)"),
     "toleransi_utara_selatan_m": (150.0, "KEBIJAKAN", "FDT atau feeder yang beda utara-selatannya dari POP kurang dari ini "
@@ -259,15 +271,19 @@ LABEL_ID = {
     "tulis_kmz_analisis": "Tulis KMZ bahan tinjauan (_ANALISIS)",
     "tulis_hanger": "Tulis titik hanger/slack baru", "tulis_otb_eksisting": "Tulis titik OTB Existing",
     "kabel_dari_sisa_tube": "Ukuran kabel baru dari sisa tube", "batas_tube_kabel_48": "Sisa tube maksimum untuk kabel 48",
+    "closure_utama_m": "Closure existing diutamakan sebagai titik sambung (m)",
+    "tulis_route_existing": "Buat folder Informasi Route Existing",
+    "gabung_proyek": "Satu berkas hasil per proyek",
     "arah_utara_selatan": "Feeder searah utara/selatan dengan FDT", "toleransi_utara_selatan_m": "Toleransi utara/selatan (m)",
 }
 JENIS_ID = {"PDF": "Aturan engineering (PDF 11-11-2026)", "STANDAR": "Standar", "DATA": "Dari desain nyata", "KEBIJAKAN": "Kebijakan", "KEBIJAKAN+DATA": "Kebijakan dan desain nyata"}
 
 PENJELASAN_EN = {
-    "kabel_dari_sisa_tube": ("Branch cable size from free tubes (old rule)", "Off (default): the cable size follows the "
-                             "route length (see the 48/96-fibre distance limit). On: the new cable from the feeder to the "
-                             "FDT is 48 fibres when the 96F tube group (T1-T8) it uses has at most the set number of free "
-                             "tubes left, otherwise 96 fibres; a 48F (T9-T12) branch always gets 48 fibres."),
+    "kabel_dari_sisa_tube": ("Branch cable size from tubes carried (priority)", "On (default, reviewer revision of 23 Nov "
+                             "2026): the new cable from the feeder to the FDT is 48 fibres when it carries at most the set "
+                             "number of tubes (a 48-fibre cable holds 4 tubes), otherwise 96; the first FDT of a project "
+                             "carries the tubes of the whole project. The 4 km rule then picks the tube group and sizes new "
+                             "feeders. Off: the cable size follows the route length only."),
     "tolak_jalur_memutar": ("Reject a feeder whose route is much longer than a new feeder", "Off (default, reviewer rule "
                             "of 18 Nov 2026): an existing feeder that still has a free tube is used; a long route is only "
                             "noted. On: the rule of versions 1.4.x, the feeder is rejected when its route is over the "
@@ -282,8 +298,18 @@ PENJELASAN_EN = {
                            "a full feeder and a new feeder."),
     "proyek_jarak_maks_m": ("Furthest FDT of one project (m)", "FDTs in one file that are further apart than this are "
                             "treated as separate projects."),
-    "batas_tube_kabel_48": ("Free tubes for a 48-fibre cable", "Largest number of free tubes for which the new cable is "
-                            "48 fibres; with more free tubes it is 96 fibres."),
+    "batas_tube_kabel_48": ("Tubes for a 48-fibre cable", "Largest number of tubes a new cable carries and still is 48 "
+                            "fibres; with more tubes it is 96 fibres."),
+    "gabung_proyek": ("One result file per project", "On (default): FDTs of one project (same file, close together, same "
+                      "feeder) become one result file with one route folder (for example F1_T2-T3), as in the compilation; "
+                      "the later FDTs tap the first FDT's new cable, so there are no parallel cables. Off: one file per FDT."),
+    "tulis_route_existing": ("Existing routes info (NAME, DESCR2)", "On: the KMZ gets the 'Informasi Route Existing' "
+                             "folder and QGIS the 'Existing routes used' layer (inventory cables the route rides on). "
+                             "Off: this part is skipped entirely, which is faster. When you press Run, Tembuku asks "
+                             "unless a choice was remembered; 'Restore default values' makes it ask again."),
+    "closure_utama_m": ("Prefer an existing closure as the tap (m)", "Reviewer revision of 23 Nov 2026: tapping at a "
+                        "slack is allowed, but an existing closure comes first. A closure on the same cable is used when "
+                        "its new cable is at most this many metres longer than the best tap."),
     "arah_utara_selatan": ("Feeder north/south as the FDT", "On (default): an FDT north of the POP only uses a feeder "
                            "that leaves the POP northward, an FDT south of the POP only a feeder that leaves southward."),
     "toleransi_utara_selatan_m": ("North/south tolerance (m)", "An FDT or feeder less than this far north or south of "

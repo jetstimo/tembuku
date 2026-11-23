@@ -594,6 +594,30 @@ def baca_target(path, temuan=None):
     return list(out.values())
 
 
+_BUKAN_JALUR_TIANG = ("DROP", "PANCINGAN", "BOUNDARY", "BATAS", "HOMEPASS", "HP", "SLING", "GALIAN", "UG", "DUCT")
+
+
+def baca_jalur_distribusi(path):
+    """Garis kabel distribusi RENCANA di berkas target (folder 'Distribution'/'Distribusi': 24D/48D Plan dan
+    sejenisnya) = jalur tiang FTTH cluster itu sendiri. Desainer menamai kabel feeder yang menumpang tiang ini
+    'Colo Pole FTTH' (Gorontalo POP 1, 23-11-2026). Bagian 'Feeder' di berkas itu TIDAK dibaca (itu gambar feeder
+    desainer). Drop core, pancingan, boundary dan galian tidak dihitung sebagai jalur tiang. Titik tiang (Tiang/Pole)
+    di bagian distribusi ikut dikembalikan. -> (garis [[(lon,lat)]], tiang [(lon,lat)])"""
+    garis, tiang = [], []
+    for pm in baca.placemarks(path):
+        jalur = [str(f or "").upper() for f in pm["path"]]
+        if not any("DISTRIBU" in f for f in jalur) or any(f.strip() == "FEEDER" for f in jalur):
+            continue
+        teks = " ".join(jalur + [str(pm.get("name") or "").upper()])
+        for g, cs in pm["geoms"]:
+            if g == "Point" and cs and re.search(r"\b(TIANG|POLE)\b", teks):
+                tiang.append((float(cs[0][0]), float(cs[0][1])))
+            elif g == "LineString" and len(cs) >= 2 and not any(re.search(r"\b%s\b" % k, teks)
+                                                                for k in _BUKAN_JALUR_TIANG):
+                garis.append([(float(p[0]), float(p[1])) for p in cs])
+    return garis, tiang
+
+
 def baca_pop(path, temuan=None, hanya_bertanda=False):
     """Titik POP/OLT/STO. Di berkas daftar POP: bila sebagian titik bertanda POP (nama/folder/atribut), hanya titik itu
     yang dipakai; bila tidak ada tanda sama sekali, semua titik dianggap POP. hanya_bertanda=True untuk berkas lain

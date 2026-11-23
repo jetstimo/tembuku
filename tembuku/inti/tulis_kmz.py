@@ -6,6 +6,7 @@ ditempel ke compile (slide 7/11): POP / Feeder N / F<n>_T<k>_<ID>_APD Feeder KMZ
 Closure, OTB, FDT, OLT, Keterangan Infra. Warna kabel = slide 16 'Format Warna Kabel' (KML aabbggrr).
 KMZ: doc.kml entri pertama, DEFLATE, UTF-8 tanpa BOM; semua teks di-escape (tidak ada HTML/JS dari input)."""
 import datetime
+import math
 import os
 import re
 import zipfile
@@ -99,6 +100,7 @@ WARNA_IKON = {"slack": "ff00ffff", "closure": "ff00aaff", "otb": "ffff8800", "fd
 IKON_APD = {"hanger": ("http://maps.google.com/mapfiles/kml/shapes/forbidden.png", 0.8),
             "olt": ("http://maps.google.com/mapfiles/kml/shapes/homegardenbusiness.png", 1.2)}
 WARNA_EKSISTING = "ff00ffff"            # objek eksisting di compile diberi warna ikon ini (closure, FDT)
+WARNA_LABEL_EXT = "ff0000ff"            # label 'Ext Closure' merah (KML aabbggrr), seperti data desainer
 
 
 def _c(ll):
@@ -133,6 +135,8 @@ class _W(object):
             st = self.lokal.get(jenis, "ikon_tiang")
         if st is None:
             st = self.lokal.get(jenis, "ikon_" + jenis)
+        if eks == "ext" and st.startswith("lokal_"):
+            return st + "_ext"              # Ext Closure: label merah, ikon kuning, skala 0,8 (data desainer)
         return st + "_eks" if eks and st.startswith("lokal_") else st
 
     def a(self, s):
@@ -194,6 +198,10 @@ def _styles(w, lokal=None):
             '<LabelStyle><scale>0.8</scale></LabelStyle></Style>' % (k, skala, netral))
         w.a('<Style id="lokal_%s_eks"><IconStyle><color>%s</color><scale>%s</scale><Icon><href>files/%s</href></Icon>'
             '</IconStyle><LabelStyle><scale>0.8</scale></LabelStyle></Style>' % (k, WARNA_EKSISTING, skala, netral))
+        # 'Ext Closure' seperti placemark desainer (revisi 23-11-2026): label merah, ikon kuning, keduanya skala 0,8
+        w.a('<Style id="lokal_%s_ext"><IconStyle><color>%s</color><scale>0.8</scale><Icon><href>files/%s</href></Icon>'
+            '</IconStyle><LabelStyle><color>%s</color><scale>0.8</scale></LabelStyle></Style>'
+            % (k, WARNA_EKSISTING, netral, WARNA_LABEL_EXT))
         w.lokal[k] = "lokal_" + k
 
 
@@ -577,8 +585,110 @@ def nama_traksi(h, prm, tgl=None):
     return "F%d_T%d_%s_APD Feeder KMZ_%s_%s" % (n["feeder"], n["t"], clus, area, tgl)
 
 
-def _isi_traksi(w, h, prm, ke_ll):
-    """Isi satu folder traksi sesuai template compile. ke_ll: lokal(m) -> (lon,lat)."""
+def kelompok_proyek(hasil, prm):
+    """1.6.1: FDT satu proyek (berkas FDT yang sama, POP dan feeder yang sama) digabung menjadi SATU traksi/berkas
+    hasil, seperti desainer ('F5_T1-T2_..._Jl. Mesjid Al Huda'). -> [[h, ...], ...] dengan urutan masukan."""
+    if not prm.get("gabung_proyek", True):
+        return [[h] for h in hasil]
+    grup, urut = {}, []
+    for h in hasil:
+        n = h.get("penomoran") or {}
+        pid = h["fdt"].get("_proyek_id")       # hanya FDT yang dirancang sebagai satu proyek (bukan uji akurasi)
+        if h["keputusan"] in ("COLO", "COLO_CEK", "COLO_MANUAL", "FEEDER_BARU") and pid and n.get("feeder"):
+            kunci = (pid, n.get("pop_folder"), n.get("feeder"))
+        else:
+            kunci = ("_sendiri", id(h))
+        if kunci not in grup:
+            grup[kunci] = []
+            urut.append(kunci)
+        grup[kunci].append(h)
+    return [grup[k] for k in urut]
+
+
+LEWAT_FDT_M = 20.0     # FDT proyek sedekat ini dari kabel utama dilewati kabel itu (satu garis, tanpa ekor)
+
+
+def _teks_t(ts):
+    ts = sorted(set(int(t) for t in ts if t))
+    if len(ts) > 1 and ts == list(range(ts[0], ts[-1] + 1)):
+        return "T%d-T%d" % (ts[0], ts[-1])
+    return ",".join("T%d" % t for t in ts)
+
+
+def nama_traksi_grup(hs, prm, tgl=None):
+    nm = nama_traksi(hs[0], prm, tgl)
+    if len(hs) < 2:
+        return nm
+    n = hs[0]["penomoran"]
+    return nm.replace("F%d_T%d_" % (n["feeder"], n["t"]), "F%d_%s_" % (n["feeder"], _teks_t(
+        [h["penomoran"].get("t") for h in hs])), 1)
+
+
+def _numpang_proyek(h):
+    """True bila FDT ini menyambung ke kabel baru FDT lain di proyek yang sama (kabelnya sama, tidak digambar ulang)."""
+    return ((h.get("terpilih") or {}).get("tap_slack") or {}).get("jenis") == "usulan"
+
+
+def _gabung_xml(a, b):
+    """Gabung pohon Folder b ke a: folder bernama sama digabung, placemark kembar (nama + geometri sama) dilewati."""
+    import xml.etree.ElementTree as ET  # noqa: F401
+    for c in list(b):
+        if c.tag == "Folder":
+            nm = c.findtext("name")
+            sama = next((x for x in a.findall("Folder") if x.findtext("name") == nm), None)
+            if sama is None:
+                a.append(c)
+            else:
+                _gabung_xml(sama, c)
+        elif c.tag == "Placemark":
+            kunci = (c.findtext("name"), "".join(c.itertext()))
+            if not any(x.tag == "Placemark" and (x.findtext("name"), "".join(x.itertext())) == kunci for x in a):
+                a.append(c)
+
+
+def _isi_grup(w, hs, prm):
+    """Folder 'Feeder' untuk satu traksi berisi satu FDT atau beberapa FDT satu proyek (digabung per folder template)."""
+    if len(hs) == 1:
+        L = geo.Lokal(*hs[0]["lokal"])
+        w.folder("Feeder", lambda: _isi_traksi(w, hs[0], prm, L.balik))
+        return
+    import xml.etree.ElementTree as ET
+    # FDT proyek yang menempel kabel utama (<= LEWAT_FDT_M): kabel utama dilewatkan ke FDT itu, ekornya tidak ditulis
+    dekat = {id(h) for h in hs[1:] if _numpang_proyek(h) and
+             float((h.get("terpilih") or {}).get("kabel_baru_m") or 0) <= LEWAT_FDT_M}
+    lewat = [h["fdt"]["ll"] for h in hs if id(h) in dekat]
+    akar = None
+    for i, h in enumerate(hs):
+        w2 = _W()
+        w2.__dict__.update({k: v for k, v in w.__dict__.items() if k != "o"})
+        w2.o = []
+        L = geo.Lokal(*h["lokal"])
+        w2.folder("Feeder", lambda w2=w2, h=h, L=L, i=i: _isi_traksi(
+            w2, h, prm, L.balik, sekunder=i > 0 and _numpang_proyek(h), lewat=lewat if i == 0 else None,
+            tanpa_kabel=id(h) in dekat))
+        pohon = ET.fromstring("".join(w2.o))
+        if akar is None:
+            akar = pohon
+        else:
+            _gabung_xml(akar, pohon)
+    w.a(ET.tostring(akar, encoding="unicode"))
+
+
+def _jarak_ruas(q, a, b):
+    """Jarak titik q ke ruas a-b (lon/lat) dalam meter."""
+    lat0 = math.radians(q[1])
+    kx, ky = 111320.0 * math.cos(lat0), 110574.0
+    ax, ay, bx, by = (a[0] - q[0]) * kx, (a[1] - q[1]) * ky, (b[0] - q[0]) * kx, (b[1] - q[1]) * ky
+    dx, dy = bx - ax, by - ay
+    L2 = dx * dx + dy * dy
+    t = 0.0 if L2 == 0 else max(0.0, min(1.0, -(ax * dx + ay * dy) / L2))
+    return math.hypot(ax + t * dx, ay + t * dy)
+
+
+def _isi_traksi(w, h, prm, ke_ll, sekunder=False, lewat=None, tanpa_kabel=False):
+    """Isi satu folder traksi sesuai template compile. ke_ll: lokal(m) -> (lon,lat).
+    sekunder=True: FDT ini menyambung ke kabel baru FDT lain di proyek yang sama (traksi gabungan) - COLO CABLE dan
+    Informasi Route Existing-nya sama dengan milik FDT pertama, jadi tidak ditulis ulang."""
     f, pop = h["fdt"], h["pop"]
     sel = h.get("terpilih")
     baru = h["keputusan"] == "FEEDER_BARU"
@@ -644,6 +754,20 @@ def _isi_traksi(w, h, prm, ke_ll):
         if not baru:
             kab_final = {c: [_rapat_ke_feeder(g, colo_final) for g in daftar] for c, daftar in kab_final.items()}
     semua_final = [g for daftar in kab_final.values() for g in daftar]
+    # 1.6.1 satu proyek: FDT lain yang hanya beberapa meter dari kabel ini dilewati kabel utama (masuk ke closure FDT
+    # itu, lalu lanjut) - satu garis kabel, bukan kabel utama + ekor pendek
+    for q in lewat or ():
+        terbaik = None
+        for c_, daftar in kab_final.items():
+            for g in daftar:
+                for i in range(len(g) - 1):
+                    d = _jarak_ruas(q, g[i], g[i + 1])
+                    if terbaik is None or d < terbaik[0]:
+                        terbaik = (d, g, i)
+        if terbaik is not None:
+            terbaik[1].insert(terbaik[2] + 1, (float(q[0]), float(q[1])))
+    if tanpa_kabel:       # kabelnya sudah digambar sebagai bagian kabel utama proyek
+        kab_final, semua_final, infra = {}, [], []
     tiang = {6: [], 7: [], 9: []}
     if rute and float(prm.get("tiang_m") or 0) >= 10:
         for a, b in rute.get("seberang") or []:
@@ -687,7 +811,7 @@ def _isi_traksi(w, h, prm, ke_ll):
             # nama 'COLO CABLE'; keterangan = rute kabel feeder yang dilalui (arahan atasan 18-11-2026), mis.
             # 'Colo Cable F6 Feeder Perumahan karlia asri'; melewati beberapa cluster -> satu garis per cluster sesuai
             # urutan rute dari POP
-            if sel and sel.get("colo_xy"):
+            if sel and sel.get("colo_xy") and not sekunder:
                 garis_colo = colo_final or [ke_ll(p) for p in rapikan_garis(sel["colo_xy"])]
                 potong = _potong_fraksi(garis_colo, sel.get("colo_route") or [])
                 if potong:
@@ -738,20 +862,26 @@ def _isi_traksi(w, h, prm, ke_ll):
         def nc():
             for c in CORE:
                 def isi(c=c):
-                    # seperti hasil desainer: New Closure 96 di FDT; titik sambung di tengah kabel (tanpa slack/closure
-                    # existing) juga mendapat New Closure baru
+                    # seperti hasil desainer: New Closure 96 di FDT. Revisi 23-11-2026: titik sambung di slack (feeder
+                    # cluster lain), di ujung kabel atau di tengah kabel mendapat New Closure baru; hanya closure yang
+                    # sudah ada yang ditulis sebagai Ext Closure
                     if c == core_tap and h["keputusan"] != "PERLU_MANUAL" and (sel or baru):
-                        if tap_ll and not ts and not baru:
+                        dekat_fdt = (ts or {}).get("jenis") == "usulan" and tap_ll and \
+                            geo.haversine(tap_ll, f["ll"]) < 20.0     # closure FDT sekaligus titik sambung
+                        if tap_ll and not baru and (not ts or ts.get("jenis") != "closure") and not dekat_fdt:
                             w.titik("New Closure", tap_ll, w.ik("closure", c))
                         w.titik("New Closure", f["ll"], w.ik("closure", c))
                     if baru and c == 144 and kab_baru.get(144):
                         w.titik("New Closure", kab_baru[144][0][-1], w.ik("closure", 144))
                 w.folder("New Closure %d" % c, isi)
         w.folder("New Closure", nc)
-        # slack/closure/ujung kabel existing yang dipakai sebagai titik sambung = 'Ext Closure' (seperti hasil desainer)
-        w.folder("Eksisting Closure", lambda: (w.titik("Ext Closure", tap_ll,
-                                                       w.ik("closure", core_tap, eks=True))
-                                               if tap_ll and ts and not baru else None))
+        # revisi 23-11-2026: hanya CLOSURE existing yang dipakai sebagai titik sambung = 'Ext Closure' dengan ikon sesuai
+        # kapasitasnya (Closure 96 -> Ext Closure 96); slack bukan closure, jadi tidak ditulis di sini
+        core_ext = _core_bulat(int((ts or {}).get("core") or core_tap))
+        w.folder("Eksisting Closure", lambda: (w.titik("Ext Closure", tap_ll, w.ik("closure", core_ext, eks="ext"),
+                                                       "Closure %d existing di compile, dipakai sebagai titik sambung"
+                                                       % core_ext)
+                                               if tap_ll and ts and ts.get("jenis") == "closure" and not baru else None))
     w.folder("Closure", closure)
 
     def otb():
@@ -832,6 +962,8 @@ def _isi_traksi(w, h, prm, ke_ll):
 
     # arahan 18-11-2026: kabel existing (inventaris) yang dilalui rute, dengan NAME dan DESCR2 di tabel balonnya
     info = (sel or {}).get("route_existing") if sel else ((h.get("feeder_baru") or {}).get("route_existing") if baru else None)
+    if not prm.get("tulis_route_existing", True) or sekunder:   # opsional sejak 1.6.1; sekunder: sama dengan FDT pertama
+        return bantu, [ll for kelas, _c, ll, _r in infra if kelas == "NEW_INFRA"], tiang
     w.folder(FOLDER_ROUTE_EXISTING, lambda: [
         w.garis(d["nama"], d["ll"], "infra_ROUTE_EXISTING", data={"NAME": d["nama"], "DESCR2": d["descr2"]},
                 final=True)     # titiknya sudah dari garis rute yang digambar (bersih); tidak dipangkas lagi
@@ -944,16 +1076,14 @@ def tulis(hasil, path, prm, judul=None, ikon_lokal=None, analisis=False):
         def pop_isi(fdrs=fdrs):
             for fn, hs in sorted(fdrs.items()):
                 def fdr_isi(hs=hs):
-                    for h in hs:
-                        L = geo.Lokal(*h["lokal"])
-                        if analisis:
+                    if analisis:
+                        for h in hs:
+                            L = geo.Lokal(*h["lokal"])
                             bantu, infra_baru, tiang = _isi_traksi(_W(), h, prm, L.balik)
                             _analisis_folder(w, h, L.balik, bantu, infra_baru, tiang)
-                            continue
-
-                        def tr(h=h, L=L):
-                            w.folder("Feeder", lambda: _isi_traksi(w, h, prm, L.balik))
-                        w.folder(nama_traksi(h, prm), tr)
+                        return
+                    for grp in kelompok_proyek(hs, prm):     # FDT satu proyek = satu traksi (mis. F1_T2-T3)
+                        w.folder(nama_traksi_grup(grp, prm), lambda grp=grp: _isi_grup(w, grp, prm))
                 w.folder("Feeder %d" % fn, fdr_isi)
         # satu folder POP di akar, sama dengan compile (POP / Feeder N / traksi) - tanpa akar tambahan, tanpa ".kmz"
         w.folder(re.sub(r"\.km[lz]$", "", (popf or "POP").strip(), flags=re.I) or "POP", pop_isi)
@@ -1044,7 +1174,10 @@ def nama_hasil_distribusi(path_masukan):
 
 def tulis_distribusi(h, path_masukan, path, prm, ikon_lokal=None):
     """KMZ APD Distribusi masukan dengan folder Feeder diisi desain feeder FDT ini, seperti hasil desainer: isi
-    Distribution dan semua berkas di KMZ masukan tetap apa adanya; hanya folder Feeder (template kosong) diganti."""
+    Distribution dan semua berkas di KMZ masukan tetap apa adanya; hanya folder Feeder (template kosong) diganti.
+    h boleh daftar hasil satu proyek (1.6.1): folder Feeder berisi gabungan semua FDT proyek itu."""
+    hs = h if isinstance(h, list) else [h]
+    h = hs[0]
     with zipfile.ZipFile(path_masukan) as zf:
         nm = next(n for n in zf.namelist() if n.lower().endswith(".kml"))
         kml = zf.read(nm).decode("utf-8")
@@ -1056,8 +1189,7 @@ def tulis_distribusi(h, path_masukan, path, prm, ikon_lokal=None):
     _styles(w, ikon_lokal or {})
     gaya = "".join(w.o)
     w.o = []
-    L = geo.Lokal(*h["lokal"])
-    w.folder("Feeder", lambda: _isi_traksi(w, h, prm, L.balik))
+    _isi_grup(w, hs, prm)
     isi = "".join(w.o)
     # id style Tembuku diberi awalan agar tidak bentrok dengan style di KMZ masukan
     for sid in set(re.findall(r'<Style id="([^"]+)"', gaya)):
