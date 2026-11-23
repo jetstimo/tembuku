@@ -156,7 +156,7 @@ class DialogTembuku(QtWidgets.QDialog):
         self.t_prm.horizontalHeader().setSectionResizeMode(2, qtc.STRETCH)
         gl.addWidget(self.t_prm)
         b_reset = QtWidgets.QPushButton("Restore default values")
-        b_reset.clicked.connect(lambda: self._isi_prm({}))
+        b_reset.clicked.connect(lambda: (self._isi_prm({}), self.st.setValue("tembuku/route_existing", "")))
         gl.addWidget(b_reset)
         self.lanjut.toggled.connect(self.isi_lanjut.setVisible)
         self.isi_lanjut.setVisible(False)
@@ -439,6 +439,33 @@ class DialogTembuku(QtWidgets.QDialog):
                                 ("" if not kunci_batch else "\n(Not available: " + teks + ")"))
 
     # ------------------------------------------------------------------ jalankan
+    def _tanya_route_existing(self):
+        """Pop-up 1.6.1: ikutkan 'Informasi Route Existing'? -> True/False, None bila dibatalkan. Pilihan bisa diingat
+        (tembuku/route_existing); 'Restore default values' di Advanced membuat Tembuku bertanya lagi."""
+        ingat = str(self.st.value("tembuku/route_existing", "") or "")
+        if ingat in ("ya", "tidak"):
+            return ingat == "ya"
+        mb = QtWidgets.QMessageBox(self)
+        mb.setWindowTitle("Tembuku")
+        mb.setIcon(qtc.e(QtWidgets.QMessageBox, "Icon", "Question"))
+        mb.setText("<b>Include the 'Informasi Route Existing' folder?</b>")
+        mb.setInformativeText("It lists the existing inventory cables the route rides on, with their NAME and DESCR2, "
+                              "in the KMZ and as a QGIS layer. It is optional: the design, the COLO CABLE labels and "
+                              "everything else are the same either way, and skipping it makes the run faster.")
+        ya = mb.addButton("Yes, include it", qtc.e(QtWidgets.QMessageBox, "ButtonRole", "YesRole"))
+        tidak = mb.addButton("No, skip it", qtc.e(QtWidgets.QMessageBox, "ButtonRole", "NoRole"))
+        mb.addButton(qtc.e(QtWidgets.QMessageBox, "StandardButton", "Cancel"))
+        mb.setDefaultButton(ya)
+        cb = QtWidgets.QCheckBox("Remember my choice (to be asked again: Advanced > 'Restore default values')")
+        mb.setCheckBox(cb)
+        qtc.jalankan(mb)
+        if mb.clickedButton() not in (ya, tidak):
+            return None
+        pilih = mb.clickedButton() is ya
+        if cb.isChecked():
+            self.st.setValue("tembuku/route_existing", "ya" if pilih else "tidak")
+        return pilih
+
     def _mulai(self, mode):
         ubah, salah = self.prm()
         if salah:
@@ -460,6 +487,11 @@ class DialogTembuku(QtWidgets.QDialog):
         self.st.setValue("tembuku/osm", "1" if self.c_osm.isChecked() else "0")
         self.st.setValue("tembuku/prm", json.dumps(ubah))
         self.st.setValue("tembuku/overpass", server)
+        if mode == "batch" and "tulis_route_existing" not in ubah:
+            pilih = self._tanya_route_existing()
+            if pilih is None:
+                return
+            ubah = dict(ubah, tulis_route_existing=pilih)     # pilihan run ini (bukan pengaturan Advanced)
         keluar = self.w_keluar.filePath().strip()
         if not keluar:
             dasar = self.w_folder.filePath() if os.path.isdir(self.w_folder.filePath()) else os.path.dirname(

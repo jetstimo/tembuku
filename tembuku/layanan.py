@@ -155,6 +155,14 @@ class Sesi(object):
                 self.temuan.tambah(V.INFO, "Kelengkapan", T("%d titik POP/OLT/STO di berkas ini ikut dipakai sebagai POP",
                                                             "%d POP/OLT/STO points in this file are also used as POPs")
                                    % len(tambahan), os.path.basename(p))
+        self.jalur_distribusi, self.tiang_distribusi = [], []
+        for p in self.peran.get("TARGET", []):
+            try:
+                g, t = sumber.baca_jalur_distribusi(p)
+                self.jalur_distribusi += g
+                self.tiang_distribusi += t
+            except Exception as e:      # pelengkap label infra: desain tetap jalan
+                _log.note(e, "jalur distribusi")
         self.target = []
         sudah = set()
         for p in self.peran.get("TARGET", []):
@@ -386,6 +394,7 @@ class Sesi(object):
         self.nilai_uji = []
         if not self.uji:
             self._pakai_hasil_lama(targets)
+        self._lupakan_usulan(targets)
         self.siapkan_jalan(targets)
         try:
             self.periksa_gambar(targets)
@@ -401,6 +410,11 @@ class Sesi(object):
                     self._kec_batch |= set(f.get("_kecuali") or ())
                 self.data.kecuali = set(f["_uji"]["kecuali"]) if f.get("_uji") else set(self._kec_batch)
                 self.hasil.append(mesin.analisis(f, self.data, self.prm))
+                try:        # label infra saja (keputusan dan biaya tidak berubah)
+                    mesin.label_infra_akhir(self.hasil[-1], getattr(self, "jalur_distribusi", None) or [],
+                                            getattr(self, "tiang_distribusi", None) or [], self.prm)
+                except Exception as e:
+                    _log.note(e, "label infra")
                 if not f.get("_uji"):
                     # FDT berikutnya dalam proses yang sama melihat tube & kabel yang baru diusulkan (tidak dobel)
                     try:
@@ -424,6 +438,28 @@ class Sesi(object):
                 self.hasil.append(mesin.hasil_gagal(f, self.data, self.prm, str(e)[:150]))
         self.data.kecuali = set()
         return self.hasil
+
+    def _lupakan_usulan(self, targets):
+        """FDT yang dirancang (ulang) tidak boleh melihat usulannya sendiri dari proses sebelumnya di sesi ini (kabel
+        virtual _TEMBUKU_BATCH, tube yang dicatat, FDT tambahan di traksi yang dipetik) - tanpa ini proses kedua
+        menyambung ke kabel usulannya sendiri (uji geser 23-11-2026: kabel baru 5 m, nomor tube terus naik). Usulan FDT
+        lain tetap terlihat, jadi FDT yang dirancang satu per satu tetap tidak berebut tube."""
+        if self.data is None:
+            return
+        kode = {str(f.get("kode") or "").upper() for f in targets}
+        for c in self.data.compiles:
+            c.pop("_peta_traksi", None)
+            for t in c.get("traksi", {}).values():
+                if t.get("_tambahan"):
+                    t["_tambahan"] = [x for x in t["_tambahan"] if str(x).upper() not in kode]
+            if c.get("berkas") != "_TEMBUKU_BATCH":
+                continue
+            c["traksi"] = {k: t for k, t in c["traksi"].items()
+                           if not any(str(f.get("kode") or "").upper() in kode for f in t.get("fdt", ()))}
+            c["kabel"] = [k for k in c["kabel"] if str(k.get("fdt_proyek") or "").upper() not in kode]
+            c["fdt"] = [f for f in c["fdt"] if str(f.get("kode") or "").upper() not in kode]
+            c.pop("_peta_traksi", None)
+        self.data._ledger.clear()
 
     def periksa_gambar(self, targets, maks_pesan=25):
         """1.6.0: periksa bentuk gambar setiap kabel compile dan inventaris di area kerja (POP sampai FDT). Kabel yang
@@ -503,6 +539,7 @@ class Sesi(object):
         for f in targets:
             f.pop("_proyek_sisa", None)
             f.pop("_proyek_feeder", None)
+            f.pop("_proyek_id", None)
         grup = {}
         if self.uji or not self.prm.get("proyek_satu_feeder", True):
             return grup
@@ -529,6 +566,7 @@ class Sesi(object):
                 for j, f in enumerate(kel):
                     if len(kel) > 1:
                         f["_proyek_sisa"] = len(kel) - j
+                        f["_proyek_id"] = kel[0]["kode"]     # satu proyek = satu berkas hasil (tulis_kmz.kelompok_proyek)
                     grup[id(f)] = kel
         return grup
 
@@ -655,19 +693,24 @@ class Sesi(object):
         self.progres("Writing the KMZ files and the report", 96)
         terpakai = set()
         tgl_nama = datetime.date.today().strftime("%d-%m-%Y")
-        for h in hasil:
-            dasar = _nama_desain(h, tgl_nama)
+        # 1.6.1: FDT satu proyek (berkas, POP dan feeder sama) = SATU berkas desain dengan satu traksi gabungan
+        grupe = tulis_kmz.kelompok_proyek(hasil, self.prm)
+        kmz_h = {}
+        for grp in grupe:
+            dasar = _nama_desain(grp[0], tgl_nama)
             nm, i = dasar + ".kmz", 2
             while nm.lower() in terpakai:           # nama kembar: jangan menimpa KMZ sebelumnya
                 nm = "%s_%d.kmz" % (dasar, i)
                 i += 1
             terpakai.add(nm.lower())
-            out["kmz"].append(tulis_kmz.tulis([h], os.path.join(folder_keluar, nm), self.prm, nm[:-4],
-                                             ikon_lokal=self.ikon_lokal))
+            p = tulis_kmz.tulis(grp, os.path.join(folder_keluar, nm), self.prm, nm[:-4], ikon_lokal=self.ikon_lokal)
+            for h in grp:
+                kmz_h[id(h)] = p
             if self.prm.get("tulis_kmz_analisis", False):
                 na = nm[:-4] + "_ANALISIS.kmz"
-                out["analisis"].append(tulis_kmz.tulis([h], os.path.join(folder_keluar, na), self.prm, na[:-4],
+                out["analisis"].append(tulis_kmz.tulis(grp, os.path.join(folder_keluar, na), self.prm, na[:-4],
                                                       ikon_lokal=self.ikon_lokal, analisis=True))
+        out["kmz"] = [kmz_h[id(h)] for h in hasil]      # sejajar dengan hasil (FDT satu proyek berbagi berkas)
         if len(hasil) > 1:
             out["semua"] = tulis_kmz.tulis(hasil, os.path.join(folder_keluar, "TEMBUKU_SEMUA_%s.kmz" % tgl), self.prm,
                                            "Tembuku - semua FDT %s" % tgl, ikon_lokal=self.ikon_lokal)
@@ -675,20 +718,22 @@ class Sesi(object):
         # distribusi yang punya folder Feeder template); nama = nama dokumen distribusi + ' - HASIL.kmz'
         out["distribusi"] = []
         sumber_target = {os.path.basename(p): p for p in self.peran.get("TARGET", [])}
-        for h in hasil:
+        for grp in grupe:
+            h = grp[0]
             asal = sumber_target.get(h["fdt"].get("berkas") or "")
             if not asal or h["keputusan"] == "PERLU_MANUAL":
                 continue
+            sebarkas = sum(1 for g in grupe if g[0]["fdt"].get("berkas") == h["fdt"].get("berkas")) > 1
             if not tulis_kmz.bisa_isi_distribusi(asal):
-                # FDT dari berkas titik FDT saja (belum ada desain distribusi): file HASIL = desain feeder FDT ini,
-                # supaya setiap FDT selalu punya satu file '- HASIL.kmz' yang diserahkan
+                # FDT dari berkas titik FDT saja (belum ada desain distribusi): file HASIL = desain feeder proyek ini,
+                # supaya setiap proyek selalu punya satu file '- HASIL.kmz' yang diserahkan
                 dasar = re.sub(r"\s*\(\d+\)$", "", os.path.splitext(os.path.basename(asal))[0]).strip()
                 nm = dasar + " - HASIL.kmz"
-                if nm.lower() in terpakai or sum(1 for x in hasil if x["fdt"].get("berkas") == h["fdt"].get("berkas")) > 1:
+                if nm.lower() in terpakai or sebarkas:
                     nm = dasar + " %s - HASIL.kmz" % _aman(h["fdt"]["kode"])
                 terpakai.add(nm.lower())
                 try:
-                    out["distribusi"].append(tulis_kmz.tulis([h], os.path.join(folder_keluar, nm), self.prm, nm[:-4],
+                    out["distribusi"].append(tulis_kmz.tulis(grp, os.path.join(folder_keluar, nm), self.prm, nm[:-4],
                                                              ikon_lokal=self.ikon_lokal))
                 except OSError as e:
                     self.temuan.tambah(V.PERINGATAN, "Hasil", T("KMZ HASIL tidak bisa ditulis (%s)",
@@ -696,13 +741,13 @@ class Sesi(object):
                                        os.path.basename(asal), "")
                 continue
             nm = tulis_kmz.nama_hasil_distribusi(asal)
-            if nm.lower() in terpakai or os.path.normcase(os.path.join(folder_keluar, nm)) in \
+            if nm.lower() in terpakai or sebarkas or os.path.normcase(os.path.join(folder_keluar, nm)) in \
                     {os.path.normcase(p) for p in self.paths}:
                 nm = nm[:-4] + " %s.kmz" % _aman(h["fdt"]["kode"])
             terpakai.add(nm.lower())
             try:
-                out["distribusi"].append(tulis_kmz.tulis_distribusi(h, asal, os.path.join(folder_keluar, nm), self.prm,
-                                                                    ikon_lokal=self.ikon_lokal))
+                out["distribusi"].append(tulis_kmz.tulis_distribusi(grp, asal, os.path.join(folder_keluar, nm),
+                                                                    self.prm, ikon_lokal=self.ikon_lokal))
             except (OSError, ValueError, KeyError, UnicodeDecodeError) as e:
                 self.temuan.tambah(V.PERINGATAN, "Hasil", T("KMZ distribusi berisi feeder tidak bisa ditulis (%s)",
                                                            "the distribution KMZ with the feeder could not be written (%s)")
@@ -712,7 +757,7 @@ class Sesi(object):
                 hasil, os.path.join(folder_keluar, "TEMBUKU_SEMUA_%s_ANALISIS.kmz" % tgl), self.prm,
                 "Tembuku - bahan tinjauan semua FDT %s" % tgl, ikon_lokal=self.ikon_lokal, analisis=True))
         salah = []
-        for pth in out["kmz"] + ([out["semua"]] if out["semua"] else []):
+        for pth in list(dict.fromkeys(out["kmz"])) + ([out["semua"]] if out["semua"] else []):
             salah += ["%s: %s" % (os.path.basename(pth), m) for m in tulis_kmz.periksa_template(pth)]
         for h, pth in zip(hasil, out["kmz"]):
             di_kmz = tulis_kmz.lokasi_fdt(pth).get(tulis_kmz.escape(h["fdt"]["kode"]), [])

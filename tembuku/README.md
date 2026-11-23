@@ -41,6 +41,15 @@ Esri World Imagery (0.3-0.5 m, your own API key) with the capture date at the ma
 than 12 months. The HTML report always shows OpenStreetMap road lines (offline) and, if you allow it, the same satellite layers.
 **Help:** *Vector → Tembuku → Help and Quick Guide* opens an offline guide with a glossary.
 
+## New in 1.6.1 (reviewer revision of 23 Nov 2026)
+- **Cable size from the tubes it carries first:** a 48-fibre cable holds 4 tubes, so up to 4 tubes is 48 fibres and more
+  is 96; the 4 km rule then picks the tube path and sizes new feeders.
+- **One project, one result:** FDTs of one file close together on the same feeder become one result file with one
+  route folder (F1_T2-T3) and one shared new cable, instead of one file and one parallel cable per FDT.
+- **Existing closure preferred as the tap** over a slack (when its new cable is at most 100 m longer, or shorter).
+- **KMZ:** tap at an existing closure = *Ext Closure* (icon of its size, red label, yellow icon); tap at a slack = *New
+  Closure*.
+
 ## New in 1.6.0 (results designers can rely on and understand)
 - **Every result explains itself** in five fixed parts: decision, main reasons (with the numbers), alternatives and why
   each was not chosen, what to check, and Tembuku's suggestion. Shown in the panel (English) and the report (Indonesian).

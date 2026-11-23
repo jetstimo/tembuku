@@ -5,6 +5,14 @@ Values are of three kinds: **standard** (from a current international standard o
 (measured on approved real designs) and **policy** (an engineering choice your team should confirm). Every value can be
 changed under *Advanced* in the Tembuku window.
 
+## 000. Version 1.6.1: reviewer revision of 23 Nov 2026 (Banda Aceh)
+| Reviewer note | 1.6.1 setting | How it is applied |
+|---|---|---|
+| "<= 4 tubes is 48, > 4 is 96" comes first, then the other rules | `kabel_dari_sisa_tube` = Yes, `batas_tube_kabel_48` = 4 | A 48-fibre cable holds 4 tubes: the new cable is 48 fibres when it carries at most 4 tubes, otherwise 96. The first FDT of a project carries the tubes of the whole project. The 4 km rule (`batas_48f_km`) then chooses the tube path (48F only within 4 km) and sizes the cable of a new feeder. (First read as "free tubes left in the feeder"; the Gorontalo test gave 96 fibres for a one-tube FDT, so it was corrected.) |
+| Two FDTs of one project -> one result | `gabung_proyek` = Yes | FDTs of one file within 2 km on the same feeder become one result file with one route folder (F1_T2-T3). The later FDT taps the first FDT's new cable near its own FDT (a proposed cable is not built yet, so its closure can be placed anywhere), so no parallel cables are drawn; within 20 m of the FDT the FDT closure is the tap. |
+| Tapping at a slack is allowed, but a closure comes first | `closure_utama_m` = 100 | An existing closure on the same feeder cable is chosen when its new cable is at most 100 m longer than the slack tap (or shorter); a closure that only looks off-direction because of a bend at the cable end is used only when it shortens the new cable. Its local direction may be up to 120 degrees off (a bend at the cable end) as long as the feeder itself runs toward the FDT. |
+| Slack of another cluster -> New Closure; Closure 96 -> Ext Closure 96 | KMZ writer | Tap at a slack, cable end or mid-cable: New Closure (`closure_tap`) at the tap. Tap at an existing closure: Ext Closure in folder Eksisting Closure, icon of the closure size, red label, yellow icon, scale 0.8. |
+
 ## 00. Version 1.6.0: Tembuku's suggestion and the drawing check
 **Decisions are the 1.5.x decisions.** The advisor and the drawing check run after the rule-based decision and never
 change it on their own (261 FDTs in 6 regions and 16 demo FDTs: same decision, F/T folder and cable size as 1.5.4).
