@@ -631,7 +631,6 @@ def _numpang_proyek(h):
 
 def _gabung_xml(a, b):
     """Gabung pohon Folder b ke a: folder bernama sama digabung, placemark kembar (nama + geometri sama) dilewati."""
-    import xml.etree.ElementTree as ET  # noqa: F401
     for c in list(b):
         if c.tag == "Folder":
             nm = c.findtext("name")
@@ -652,7 +651,7 @@ def _isi_grup(w, hs, prm):
         L = geo.Lokal(*hs[0]["lokal"])
         w.folder("Feeder", lambda: _isi_traksi(w, hs[0], prm, L.balik))
         return
-    import xml.etree.ElementTree as ET
+    from . import baca      # parser aman yang sama dengan pembacaan input (DOCTYPE/ENTITY ditolak)
     # FDT proyek yang menempel kabel utama (<= LEWAT_FDT_M): kabel utama dilewatkan ke FDT itu, ekornya tidak ditulis
     dekat = {id(h) for h in hs[1:] if _numpang_proyek(h) and
              float((h.get("terpilih") or {}).get("kabel_baru_m") or 0) <= LEWAT_FDT_M}
@@ -666,12 +665,12 @@ def _isi_grup(w, hs, prm):
         w2.folder("Feeder", lambda w2=w2, h=h, L=L, i=i: _isi_traksi(
             w2, h, prm, L.balik, sekunder=i > 0 and _numpang_proyek(h), lewat=lewat if i == 0 else None,
             tanpa_kabel=id(h) in dekat))
-        pohon = ET.fromstring("".join(w2.o))
+        pohon = baca._xml_aman("".join(w2.o).encode("utf-8"))
         if akar is None:
             akar = pohon
         else:
             _gabung_xml(akar, pohon)
-    w.a(ET.tostring(akar, encoding="unicode"))
+    w.a(baca.ET.tostring(akar, encoding="unicode"))
 
 
 def _jarak_ruas(q, a, b):
@@ -920,8 +919,6 @@ def _isi_traksi(w, h, prm, ke_ll, sekunder=False, lewat=None, tanpa_kabel=False)
     def ket():
         w.folder("New Cable Galian", lambda: [w.folder("New Cable %dC UG" % c, lambda: None) for c in CORE])
 
-        pemilik = (rute or {}).get("pemilik") or {}
-
         def tiang_colo():
             # template APD: warna kapasitas kabelnya, lebar 3; nama 'Colo Pole FTTH' untuk tiang feeder sendiri dan
             # 'Colo Pole <pemilik>' untuk jaringan lain (seperti penamaan desainer)
@@ -1134,7 +1131,7 @@ def _cari_folder(kml, nama, mulai=0):
     """Posisi (awal, akhir) elemen <Folder> pertama bernama 'nama' (teks KML apa adanya), atau None."""
     for m in re.finditer(r"<Folder(?:\s[^>]*)?>\s*<name>\s*%s\s*</name>" % re.escape(nama), kml[mulai:]):
         a = mulai + m.start()
-        tingkat, i = 0, a
+        tingkat = 0
         for t in re.finditer(r"<Folder(?:\s[^>]*)?>|</Folder>", kml[a:]):
             tingkat += 1 if t.group(0) != "</Folder>" else -1
             if tingkat == 0:
